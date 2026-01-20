@@ -1,0 +1,120 @@
+/* =========================================================
+   GLOBAL RESET & BASE
+========================================================= */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #0f172a; /* fallback behind image */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* =========================================================
+   MUI TEXTFIELD – LABEL FIX (IMPORTANT)
+========================================================= */
+
+/* Default label */
+.MuiInputLabel-root {
+  color: #475569 !important; /* slate-600 */
+  font-weight: 500;
+}
+
+/* Focused label (no neon blue) */
+.MuiInputLabel-root.Mui-focused {
+  color: #334155 !important; /* slate-700 */
+}
+
+/* Shrunk label (when typing) */
+.MuiInputLabel-root.MuiInputLabel-shrink {
+  color: #334155 !important;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 0 6px;
+  border-radius: 6px;
+}
+
+/* =========================================================
+   MUI TEXTFIELD – INPUT LOOK & FEEL
+========================================================= */
+
+/* Input container */
+.MuiOutlinedInput-root {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 14px;
+  transition: border-color 0.2s ease;
+}
+
+/* Input text */
+.MuiOutlinedInput-input {
+  color: #0f172a; /* slate-900 */
+  font-weight: 500;
+  font-size: 15px;
+}
+
+/* Placeholder */
+.MuiInputBase-input::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+/* Normal border */
+.MuiOutlinedInput-notchedOutline {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+/* Focus border */
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: #38bdf8;
+  border-width: 2px;
+}
+
+/* Remove ugly focus glow */
+.MuiOutlinedInput-root.Mui-focused {
+  box-shadow: none !important;
+}
+
+/* =========================================================
+   AUTOFILL FIX (CHROME)
+========================================================= */
+
+input:-webkit-autofill {
+  box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.92) inset !important;
+  -webkit-text-fill-color: #0f172a !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* =========================================================
+   BUTTON POLISH
+========================================================= */
+
+button {
+  text-transform: none !important;
+  font-weight: 600;
+}
+
+/* =========================================================
+   SCROLLBAR (SUBTLE)
+========================================================= */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
