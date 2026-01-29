@@ -3,10 +3,12 @@ import {
   sendMessage,
   getMessages
 } from "../controllers/messageController.js";
+import authMiddleware from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-router.post("/send", sendMessage);
-router.get("/", getMessages);
+// Protected routes
+router.post("/send", authMiddleware, sendMessage);
+router.get("/", authMiddleware, getMessages);
 
 export default router;
