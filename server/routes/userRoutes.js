@@ -1,8 +1,17 @@
 import express from "express";
-import { createUser } from "../controllers/userController.js";
+import User from "../models/User.js";
+import authMiddleware from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-router.post("/create", createUser);
+/* Get all users except self */
+router.get("/", authMiddleware, async (req, res) => {
+  const users = await User.find(
+    { _id: { $ne: req.userId } },
+    "name email"
+  );
+
+  res.json(users);
+});
 
 export default router;
