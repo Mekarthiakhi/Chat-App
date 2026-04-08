@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from "react";
 import AuthTabs from "../src/components/auth/AuthTabs"; 
+import ChatDashBoard from "../src/components/ChatDashboard";
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -23,17 +24,7 @@ async function apiCall(endpoint, method = "GET", body = null, token = null) {
 }
 
 // ---------- CHAT ----------
-function ChatApp({ onLogout }) {
-  const { user } = useAuth();
 
-  return (
-    <div style={{ padding: 20 }}>
-      <h2>Welcome {user.username}</h2>
-      <button onClick={onLogout}>Logout</button>
-      <p>Chat UI Loaded ✅</p>
-    </div>
-  );
-}
 
 // ---------- ROOT ----------
 export default function App() {
@@ -54,7 +45,7 @@ export default function App() {
       {!auth ? (
         <AuthTabs onLogin={handleLogin} apiCall={apiCall} />  // ✅ USE YOUR UI
       ) : (
-        <ChatApp onLogout={handleLogout} />
+        <ChatDashBoard onLogout={handleLogout} />
       )}
     </AuthContext.Provider>
   );
