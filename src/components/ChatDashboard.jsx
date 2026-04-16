@@ -7,367 +7,274 @@ import {
   IconButton
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
-
-import ParticlesBg from "../components/ParticlesBg";
-import { useRef, useEffect,useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const users = [
-  { name: "Ava", age: 24, online: true, gender: "girl", type: "user" },
-  { name: "Mia", age: 22, online: true, gender: "girl", type: "user" },
-  { name: "John", age: 28, online: true, gender: "boy", type: "user" },
-  { name: "Alex", age: 30, online: false, gender: "boy", type: "user" },
+  { name: "Ava", age: 24, online: true, gender: "girl" },
+  { name: "Mia", age: 22, online: true, gender: "girl" },
+  { name: "John", age: 28, online: true, gender: "boy" },
+  { name: "Alex", age: 30, online: false, gender: "boy" },
   { name: "AI Assistant", age: null, online: true, type: "ai" },
 ];
 
 export default function ChatDashboard() {
   const [selectedUser, setSelectedUser] = useState(null);
-const [messages, setMessages] = useState({});  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState({});
+  const [input, setInput] = useState("");
+  const [receiverTyping, setReceiverTyping] = useState(false);
   const [activeTab, setActiveTab] = useState("online");
-  const [history, setHistory] = useState([]);
-  const [genderFilter, setGenderFilter] = useState("boy");
-  const inputRef = useRef();
 
-  const suggestions = [
+  const inputRef = useRef();
+  const typingRef = useRef();
+  const messagesEndRef = useRef();
+
+  const quickMessages = [
     "Hey 😊",
-    "How was your day?",
-    "You look amazing ❤️",
+    "How are you?",
+    "What are you doing?",
+    "Let's catch up!",
+    "Good morning ☀️",
+    "Good night 🌙"
   ];
 
-  useEffect(() => {
-  if (selectedUser && inputRef.current) {
-    inputRef.current.focus();
-  }
-}, [selectedUser]);
-
- const sendMessage = () => {
-  if (!input.trim() || !selectedUser) return;
-
-  const userKey = selectedUser.name;
-
-  const newMsg = {
-    from: "me",
-    text: input,
-    time: new Date().toLocaleTimeString()
+  const stats = {
+    online: users.filter(u => u.online).length,
+    male: users.filter(u => u.gender === "boy").length,
+    female: users.filter(u => u.gender === "girl").length,
   };
 
-  setMessages(prev => ({
-    ...prev,
-    [userKey]: [
-      ...(prev[userKey] || []),
-      newMsg
-    ]
-  }));
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, selectedUser]);
 
-  setInput("");
-  setIsTyping(false);
-};
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [selectedUser]);
 
-const [isTyping, setIsTyping] = useState(false);
-  // 🔥 FILTER LOGIC
   const getFilteredUsers = () => {
-    if (activeTab === "online") return users;
-
-    if (activeTab === "gender") {
-      return users.filter(u => u.gender === genderFilter);
-    }
-
-    if (activeTab === "ai") {
-      return users.filter(u => u.type === "ai");
-    }
-
-    if (activeTab === "history") {
-      return history;
-    }
-
+    if (activeTab === "online") return users.filter(u => u.online);
+    if (activeTab === "male") return users.filter(u => u.gender === "boy");
+    if (activeTab === "female") return users.filter(u => u.gender === "girl");
     return users;
   };
 
-  const messagesEndRef = useRef();
+  const sendMessage = () => {
+    if (!input.trim() || !selectedUser) return;
 
-  
+    const key = selectedUser.name;
 
-useEffect(() => {
-  messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-}, [messages, selectedUser]);
+    const msg = {
+      from: "me",
+      text: input,
+      time: new Date().toLocaleTimeString()
+    };
+
+    setMessages(prev => ({
+      ...prev,
+      [key]: [...(prev[key] || []), msg]
+    }));
+
+    setInput("");
+    setReceiverTyping(true);
+
+    setTimeout(() => {
+      const reply = {
+        from: "them",
+        text: "Nice 🙂",
+        time: new Date().toLocaleTimeString()
+      };
+
+      setMessages(prev => ({
+        ...prev,
+        [key]: [...(prev[key] || []), reply]
+      }));
+
+      setReceiverTyping(false);
+    }, 1200);
+  };
 
   return (
-    <Box
-      sx={{
-        height: "100vh",
-        display: "flex",
-        position: "relative",
-        background:
-          "linear-gradient(135deg,#0f2027,#203a43,#2c5364)",
-        overflow: "hidden",
-      }}
-    >
-      {/* 🌌 PARTICLES */}
-      <ParticlesBg />
+    <Box sx={{ display: "flex", height: "100vh", background: "#0f172a", color: "#fff" }}>
 
-      {/* 🔥 SIDEBAR */}
-      <Box
-        sx={{
-          width: 320,
-          p: 2,
-          zIndex: 1,
-          backdropFilter: "blur(25px)",
-          background: "rgba(255,255,255,0.06)",
-          borderRight: "1px solid rgba(255,255,255,0.1)",
-          color: "#fff",
-        }}
-      >
-        {/* ✅ TABS */}
+      {/* SIDEBAR */}
+      <Box sx={{ width: 300, p: 2, borderRight: "1px solid rgba(255,255,255,0.08)" }}>
+
+        {/* TABS */}
         <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-          {["online", "gender", "history", "ai"].map(tab => (
-            <Box
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              sx={{
-                px: 1.5,
-                py: 0.5,
-                borderRadius: "10px",
-                cursor: "pointer",
-                fontSize: 12,
-                textTransform: "capitalize",
-                background:
-                  activeTab === tab
-                    ? "linear-gradient(135deg,#ff00cc,#3333ff)"
-                    : "rgba(255,255,255,0.1)",
-              }}
-            >
-              {tab}
-            </Box>
-          ))}
-        </Box>
-
-        {/* ✅ GENDER TOGGLE */}
-        {activeTab === "gender" && (
-          <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-            <Box
-              onClick={() => setGenderFilter("boy")}
-              sx={{ cursor: "pointer" }}
-            >
-              👦 Boys
-            </Box>
-            <Box
-              onClick={() => setGenderFilter("girl")}
-              sx={{ cursor: "pointer" }}
-            >
-              👧 Girls
-            </Box>
+          <Box
+            onClick={() => setActiveTab("online")}
+            sx={{
+              px: 2, py: 0.7, borderRadius: "20px", cursor: "pointer",
+              display: "flex", gap: 1,
+              background: activeTab === "online"
+                ? "linear-gradient(135deg,#6366f1,#9333ea)"
+                : "rgba(255,255,255,0.08)"
+            }}
+          >
+            Online <Box fontSize={11}>{stats.online}</Box>
           </Box>
-        )}
 
-        {/* SEARCH */}
-        <InputBase
-          placeholder="Search..."
-          sx={{
-            px: 2,
-            py: 1,
-            borderRadius: "20px",
-            background: "rgba(255,255,255,0.1)",
-            color: "#fff",
-            width: "100%",
-            mb: 2,
-          }}
-        />
+          <Box
+            onClick={() => setActiveTab("male")}
+            sx={{
+              px: 2, py: 0.7, borderRadius: "20px", cursor: "pointer",
+              background: activeTab === "male"
+                ? "linear-gradient(135deg,#6366f1,#9333ea)"
+                : "rgba(255,255,255,0.08)"
+            }}
+          >
+            👦 {stats.male}
+          </Box>
+
+          <Box
+            onClick={() => setActiveTab("female")}
+            sx={{
+              px: 2, py: 0.7, borderRadius: "20px", cursor: "pointer",
+              background: activeTab === "female"
+                ? "linear-gradient(135deg,#6366f1,#9333ea)"
+                : "rgba(255,255,255,0.08)"
+            }}
+          >
+            👧 {stats.female}
+          </Box>
+        </Box>
 
         {/* USER LIST */}
         {getFilteredUsers().map((user, i) => (
           <Box
             key={i}
-            onClick={() => {
-              setSelectedUser(user);
-
-              // ✅ SAVE HISTORY
-              setHistory(prev => {
-                const exists = prev.find(u => u.name === user.name);
-                if (exists) return prev;
-                return [user, ...prev];
-              });
-            }}
+            onClick={() => setSelectedUser(user)}
             sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 2,
-              p: 1.5,
-              borderRadius: "14px",
-              cursor: "pointer",
-              mb: 1,
-              transition: "0.2s",
-              backdropFilter: "blur(25px)",
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              "&:hover": {
-                background: "rgba(255,255,255,0.12)",
-                transform: "scale(1.02)",
-                boxShadow: "0 0 20px rgba(255,0,200,0.6)",
-              },
+              display: "flex", gap: 2, p: 1.5,
+              borderRadius: "12px", cursor: "pointer", mb: 1,
+              background: selectedUser?.name === user.name
+                ? "rgba(255,255,255,0.12)"
+                : "rgba(255,255,255,0.05)"
             }}
           >
-            <Badge
-              overlap="circular"
-              variant="dot"
-              color="success"
-              invisible={!user.online}
-            >
+            <Badge overlap="circular" variant="dot" color="success" invisible={!user.online}>
               <Avatar>{user.name[0]}</Avatar>
             </Badge>
 
             <Box>
-              <Typography sx={{ fontWeight: 500 }}>
-                {user.name}
-              </Typography>
-              <Typography fontSize={12} opacity={0.7}>
-                {user.age ? `${user.age} yrs` : "AI Chat"}
+              <Typography>{user.name}</Typography>
+              <Typography fontSize={12} opacity={0.6}>
+                {user.age ? `${user.age} yrs` : "AI"}
               </Typography>
             </Box>
           </Box>
         ))}
       </Box>
 
-      {/* 💬 CHAT AREA */}
-      <Box
-        sx={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          zIndex: 1,
-        }}
-      >
-        {/* HEADER */}
-        <Box
-          sx={{
-            p: 2,
-            backdropFilter: "blur(20px)",
-            background: "rgba(255,255,255,0.05)",
-            borderBottom: "1px solid rgba(255,255,255,0.1)",
-            color: "#fff",
-            fontWeight: 600,
-          }}
-        >
-          {selectedUser ? selectedUser.name : "Select a chat 💕"}
-        </Box>
+      {/* CHAT AREA */}
+      <Box sx={{ flex: 1, display: "flex", flexDirection: "column" }}>
 
-        {/* MESSAGES */}
-        <Box
-          sx={{
-            flex: 1,
-            p: 3,
-            display: "flex",
-            flexDirection: "column",
-            gap: 1,
-            overflowY: "auto",
-          }}
-        >
-          {!selectedUser ? (
-            <Typography color="gray" m="auto">
-              Start chatting ✨
-            </Typography>
-          ) : (
-      (messages[selectedUser?.name] || []).map((msg, i) => (
-  <Box
-    key={i}
-    sx={{
-      alignSelf: msg.from === "me" ? "flex-end" : "flex-start",
-      background: msg.from === "me" ? "#ff00cc" : "#ffffff20",
-      color: "#fff",
-      p: 1,
-      borderRadius: 2,
-      mb: 1
-    }}
-  >
-    {msg.text}
-    <Typography fontSize={10} opacity={0.6}>
-      {msg.time}
-    </Typography>
-  </Box>
-))
+        {/* HEADER */}
+        <Box sx={{ p: 2, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          {selectedUser && (
+            <>
+              <Typography fontWeight={600}>{selectedUser.name}</Typography>
+              <Typography fontSize={12} opacity={0.6}>
+                {selectedUser.age ? `${selectedUser.age} yrs • ` : ""}
+                {selectedUser.online ? "Online" : "Offline"}
+              </Typography>
+            </>
           )}
         </Box>
 
-        {/* SUGGESTIONS */}
+        {/* MESSAGES */}
+        <Box sx={{
+          flex: 1, overflowY: "auto", px: 2, py: 2,
+          display: "flex", flexDirection: "column", gap: 1
+        }}>
+          {(messages[selectedUser?.name] || []).map((msg, i) => {
+            const isMe = msg.from === "me";
+
+            return (
+              <Box key={i} sx={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
+                <Box sx={{
+                  background: isMe
+                    ? "linear-gradient(135deg,#6366f1,#9333ea)"
+                    : "rgba(255,255,255,0.1)",
+                  px: 2, py: 1, borderRadius: "16px", maxWidth: "60%"
+                }}>
+                  {msg.text}
+                  <Typography fontSize={10}>{msg.time}</Typography>
+                </Box>
+              </Box>
+            );
+          })}
+
+          {/* Typing */}
+          {receiverTyping && selectedUser && (
+            <Typography fontSize={12} opacity={0.5}>
+              {selectedUser.name} is typing...
+            </Typography>
+          )}
+
+          <div ref={messagesEndRef} />
+        </Box>
+
+        {/* FOOTER */}
         {selectedUser && (
-          <Box sx={{ display: "flex", gap: 1, px: 2, pb: 1 }}>
-            {suggestions.map((s, i) => (
-              <Box
-                key={i}
-               onClick={() => {
-  setInput(s);
- 
-}}
-onMouseDown={(e) => {
-  e.preventDefault();
-  setInput(s);
-  inputRef.current?.focus(); // 🔥 immediate focus
-}}
+          <Box sx={{ borderTop: "1px solid rgba(255,255,255,0.08)", p: 2 }}>
+
+            {/* QUICK */}
+            {input.length === 0 && (
+              <Box sx={{ display: "flex", gap: 1, mb: 1, flexWrap: "wrap" }}>
+                {quickMessages.map((msg, i) => (
+                  <Box
+                    key={i}
+                    onClick={() => {
+                      setInput(msg);
+                      inputRef.current?.focus();
+                    }}
+                    sx={{
+                      px: 2, py: 0.5, borderRadius: "20px",
+                      fontSize: 12, cursor: "pointer",
+                      background: "rgba(255,255,255,0.08)"
+                    }}
+                  >
+                    {msg}
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            {/* INPUT */}
+            <Box sx={{ display: "flex", gap: 1 }}>
+              <InputBase
+                fullWidth
+                placeholder="Type message..."
+                value={input}
+                inputRef={inputRef}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  clearTimeout(typingRef.current);
+                  setReceiverTyping(true);
+                  typingRef.current = setTimeout(() => {
+                    setReceiverTyping(false);
+                  }, 1000);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
                 sx={{
-                  px: 2,
-                  py: 0.5,
+                  px: 2, py: 1,
                   borderRadius: "20px",
                   background: "rgba(255,255,255,0.1)",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                  color:"#fff"
+                  color: "#fff"
                 }}
-              >
-                {s}
-              </Box>
-            ))}
-          </Box>
-        )}
+              />
 
-        {/* INPUT */}
-        {selectedUser && (
-          <Box
-            sx={{
-              p: 2,
-              display: "flex",
-              gap: 1,
-              backdropFilter: "blur(20px)",
-              background: "rgba(255,255,255,0.05)",
-            }}
-          >
-            <InputBase
-              placeholder="Type a message..."
-              value={input}
-                inputRef={inputRef}
-              onChange={(e) => {
-  setInput(e.target.value);
-  setIsTyping(true);
+              <IconButton onClick={sendMessage}>
+                <SendIcon sx={{ color: "#fff" }} />
+              </IconButton>
+            </Box>
 
-  // ⛔ IMPORTANT FIX
-  clearTimeout(window.typingTimer);
-  window.typingTimer = setTimeout(() => {
-    setIsTyping(false);
-  }, 1000);
-}}
-              onKeyDown={(e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      sendMessage();
-    }
-  }}
-              sx={{
-                flex: 1,
-                px: 2,
-                py: 1,
-                borderRadius: "20px",
-                background: "rgba(255,255,255,0.1)",
-                color: "#fff",
-              }}
-            />
-
-            <IconButton
-              onClick={sendMessage}
-              sx={{
-                background:
-                  "linear-gradient(135deg,#ff00cc,#3333ff)",
-                color: "#fff",
-              }}
-            >
-              <SendIcon />
-            </IconButton>
           </Box>
         )}
       </Box>
