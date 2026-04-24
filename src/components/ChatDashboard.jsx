@@ -4,7 +4,9 @@ import {
   Avatar,
   Badge,
   InputBase,
-  IconButton
+  IconButton,
+  useTheme,
+  useMediaQuery
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import { useState, useRef, useEffect } from "react";
@@ -27,6 +29,9 @@ export default function ChatDashboard() {
   const inputRef = useRef();
   const typingRef = useRef();
   const messagesEndRef = useRef();
+
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const quickMessages = [
     "Hey 😊",
@@ -97,46 +102,35 @@ export default function ChatDashboard() {
     <Box sx={{ display: "flex", height: "100vh", background: "#0f172a", color: "#fff" }}>
 
       {/* SIDEBAR */}
-      <Box sx={{ width: 300, p: 2, borderRight: "1px solid rgba(255,255,255,0.08)" }}>
-
+      <Box
+        sx={{
+          width: isMobile ? "100%" : 300,
+          p: 2,
+          borderRight: isMobile ? "none" : "1px solid rgba(255,255,255,0.08)",
+          display: isMobile && selectedUser ? "none" : "block"
+        }}
+      >
         {/* TABS */}
         <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-          <Box
-            onClick={() => setActiveTab("online")}
-            sx={{
-              px: 2, py: 0.7, borderRadius: "20px", cursor: "pointer",
-              display: "flex", gap: 1,
-              background: activeTab === "online"
-                ? "linear-gradient(135deg,#6366f1,#9333ea)"
-                : "rgba(255,255,255,0.08)"
-            }}
-          >
-            Online <Box fontSize={11}>{stats.online}</Box>
-          </Box>
-
-          <Box
-            onClick={() => setActiveTab("male")}
-            sx={{
-              px: 2, py: 0.7, borderRadius: "20px", cursor: "pointer",
-              background: activeTab === "male"
-                ? "linear-gradient(135deg,#6366f1,#9333ea)"
-                : "rgba(255,255,255,0.08)"
-            }}
-          >
-            👦 {stats.male}
-          </Box>
-
-          <Box
-            onClick={() => setActiveTab("female")}
-            sx={{
-              px: 2, py: 0.7, borderRadius: "20px", cursor: "pointer",
-              background: activeTab === "female"
-                ? "linear-gradient(135deg,#6366f1,#9333ea)"
-                : "rgba(255,255,255,0.08)"
-            }}
-          >
-            👧 {stats.female}
-          </Box>
+          {["online", "male", "female"].map((tab) => (
+            <Box
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              sx={{
+                px: 2,
+                py: 0.7,
+                borderRadius: "20px",
+                cursor: "pointer",
+                background: activeTab === tab
+                  ? "linear-gradient(135deg,#6366f1,#9333ea)"
+                  : "rgba(255,255,255,0.08)"
+              }}
+            >
+              {tab === "online" && `Online ${stats.online}`}
+              {tab === "male" && `👦 ${stats.male}`}
+              {tab === "female" && `👧 ${stats.female}`}
+            </Box>
+          ))}
         </Box>
 
         {/* USER LIST */}
@@ -145,8 +139,12 @@ export default function ChatDashboard() {
             key={i}
             onClick={() => setSelectedUser(user)}
             sx={{
-              display: "flex", gap: 2, p: 1.5,
-              borderRadius: "12px", cursor: "pointer", mb: 1,
+              display: "flex",
+              gap: 2,
+              p: 1.5,
+              borderRadius: "12px",
+              cursor: "pointer",
+              mb: 1,
               background: selectedUser?.name === user.name
                 ? "rgba(255,255,255,0.12)"
                 : "rgba(255,255,255,0.05)"
@@ -167,37 +165,101 @@ export default function ChatDashboard() {
       </Box>
 
       {/* CHAT AREA */}
-      <Box sx={{ flex: 1, display: "flex", flexDirection: "column" }}>
+      <Box
+        sx={{
+          flex: 1,
+          display: isMobile && !selectedUser ? "none" : "flex",
+          flexDirection: "column"
+        }}
+      >
 
         {/* HEADER */}
-        <Box sx={{ p: 2, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <Box
+          sx={{
+            px: 2,
+            py: 1.5,
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            display: "flex",
+            alignItems: "center",
+            gap: 1.5,
+            position: "sticky",
+            top: 0,
+            background: "#0f172a",
+            zIndex: 10
+          }}
+        >
+          {isMobile && selectedUser && (
+            <Box
+              onClick={() => setSelectedUser(null)}
+              sx={{
+                minWidth: 36,
+                height: 36,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "10px",
+                cursor: "pointer",
+                background: "rgba(255,255,255,0.08)"
+              }}
+            >
+              ←
+            </Box>
+          )}
+
           {selectedUser && (
-            <>
-              <Typography fontWeight={600}>{selectedUser.name}</Typography>
-              <Typography fontSize={12} opacity={0.6}>
-                {selectedUser.age ? `${selectedUser.age} yrs • ` : ""}
-                {selectedUser.online ? "Online" : "Offline"}
-              </Typography>
-            </>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, overflow: "hidden" }}>
+              <Avatar sx={{ width: 36, height: 36 }}>
+                {selectedUser.name[0]}
+              </Avatar>
+
+              <Box sx={{ overflow: "hidden" }}>
+                <Typography
+                  fontWeight={600}
+                  sx={{
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis"
+                  }}
+                >
+                  {selectedUser.name}
+                </Typography>
+
+                <Typography fontSize={12} opacity={0.6}>
+                  {selectedUser.online ? "Online" : "Offline"}
+                </Typography>
+              </Box>
+            </Box>
           )}
         </Box>
 
         {/* MESSAGES */}
-        <Box sx={{
-          flex: 1, overflowY: "auto", px: 2, py: 2,
-          display: "flex", flexDirection: "column", gap: 1
-        }}>
+        <Box
+          sx={{
+            flex: 1,
+            overflowY: "auto",
+            px: 2,
+            py: 2,
+            display: "flex",
+            flexDirection: "column",
+            gap: 1
+          }}
+        >
           {(messages[selectedUser?.name] || []).map((msg, i) => {
             const isMe = msg.from === "me";
 
             return (
               <Box key={i} sx={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
-                <Box sx={{
-                  background: isMe
-                    ? "linear-gradient(135deg,#6366f1,#9333ea)"
-                    : "rgba(255,255,255,0.1)",
-                  px: 2, py: 1, borderRadius: "16px", maxWidth: "60%"
-                }}>
+                <Box
+                  sx={{
+                    background: isMe
+                      ? "linear-gradient(135deg,#6366f1,#9333ea)"
+                      : "rgba(255,255,255,0.1)",
+                    px: 2,
+                    py: 1,
+                    borderRadius: "16px",
+                    maxWidth: isMobile ? "80%" : "60%"
+                  }}
+                >
                   {msg.text}
                   <Typography fontSize={10}>{msg.time}</Typography>
                 </Box>
@@ -205,7 +267,6 @@ export default function ChatDashboard() {
             );
           })}
 
-          {/* Typing */}
           {receiverTyping && selectedUser && (
             <Typography fontSize={12} opacity={0.5}>
               {selectedUser.name} is typing...
@@ -218,20 +279,18 @@ export default function ChatDashboard() {
         {/* FOOTER */}
         {selectedUser && (
           <Box sx={{ borderTop: "1px solid rgba(255,255,255,0.08)", p: 2 }}>
-
-            {/* QUICK */}
             {input.length === 0 && (
               <Box sx={{ display: "flex", gap: 1, mb: 1, flexWrap: "wrap" }}>
                 {quickMessages.map((msg, i) => (
                   <Box
                     key={i}
-                    onClick={() => {
-                      setInput(msg);
-                      inputRef.current?.focus();
-                    }}
+                    onClick={() => setInput(msg)}
                     sx={{
-                      px: 2, py: 0.5, borderRadius: "20px",
-                      fontSize: 12, cursor: "pointer",
+                      px: 2,
+                      py: 0.5,
+                      borderRadius: "20px",
+                      fontSize: 12,
+                      cursor: "pointer",
                       background: "rgba(255,255,255,0.08)"
                     }}
                   >
@@ -241,29 +300,17 @@ export default function ChatDashboard() {
               </Box>
             )}
 
-            {/* INPUT */}
             <Box sx={{ display: "flex", gap: 1 }}>
               <InputBase
                 fullWidth
                 placeholder="Type message..."
                 value={input}
                 inputRef={inputRef}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  clearTimeout(typingRef.current);
-                  setReceiverTyping(true);
-                  typingRef.current = setTimeout(() => {
-                    setReceiverTyping(false);
-                  }, 1000);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    sendMessage();
-                  }
-                }}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendMessage()}
                 sx={{
-                  px: 2, py: 1,
+                  px: 2,
+                  py: 1,
                   borderRadius: "20px",
                   background: "rgba(255,255,255,0.1)",
                   color: "#fff"
@@ -274,7 +321,6 @@ export default function ChatDashboard() {
                 <SendIcon sx={{ color: "#fff" }} />
               </IconButton>
             </Box>
-
           </Box>
         )}
       </Box>
