@@ -1,51 +1,73 @@
-import React, { createContext, useContext, useState } from "react";
-import AuthTabs from "../src/components/auth/AuthTabs"; 
-import ChatDashBoard from "../src/components/ChatDashboard";
+import React, { createContext, useContext, useState, useEffect } from "react";
+import AuthTabs from "./components/auth/AuthTabs"; 
+import ChatDashboard from "./components/ChatDashboard";
+import { auth as firebaseAuth, rtdb } from "./firebase/firebase";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { ref, set } from "firebase/database";
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
-const API_BASE = "http://localhost:5000/api";
-
-async function apiCall(endpoint, method = "GET", body = null, token = null) {
-  const headers = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : null,
-  });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
-
-  return data;
-}
-
-// ---------- CHAT ----------
-
-
-// ---------- ROOT ----------
 export default function App() {
   const [auth, setAuth] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // 🔐 Firebase Authentication & Persistence
+    const unsub = onAuthStateChanged(firebaseAuth, (user) => {
+      if (user) {
+        setAuth({
+          token: user.accessToken,
+          user: {
+            uid: user.uid,
+            name: user.displayName || user.email,
+            email: user.email,
+          },
+        });
+      } else {
+        setAuth(null);
+      }
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
 
   function handleLogin(token, user) {
-    localStorage.setItem("token", token);
     setAuth({ token, user });
   }
 
-  function handleLogout() {
-    localStorage.removeItem("token");
-    setAuth(null);
-  }
+  const handleLogout = async () => {
+    try {
+      const currentUser = firebaseAuth.currentUser;
+      if (currentUser) {
+        // Set presence to offline before signing out
+        await set(ref(rtdb, `presence/${currentUser.uid}`), {
+          online: false,
+          uid: currentUser.uid,
+          displayName: currentUser.displayName || currentUser.email,
+        });
+      }
+      await signOut(firebaseAuth);
+      setAuth(null);
+    } catch (err) {
+      console.error("Logout error:", err);
+      // Fallback: just clear state
+      setAuth(null);
+    }
+  };
+
+  if (loading) return (
+    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0b0f1a", color: "#fff", fontFamily: "sans-serif" }}>
+      Loading Chat...
+    </div>
+  );
 
   return (
     <AuthContext.Provider value={auth}>
       {!auth ? (
-        <AuthTabs onLogin={handleLogin} apiCall={apiCall} />  // ✅ USE YOUR UI
+        <AuthTabs onLogin={handleLogin} />
       ) : (
-        <ChatDashBoard onLogout={handleLogout} />
+        <ChatDashboard onLogout={handleLogout} />
       )}
     </AuthContext.Provider>
   );

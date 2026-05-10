@@ -171,9 +171,9 @@ const AuthTabs = ({ onLogin, apiCall }) => {
               transition={{ duration: 0.35 }}
             >
               {tab === 0 ? (
-                <LoginForm onLogin={onLogin} apiCall={apiCall} />
+                <LoginForm onLogin={onLogin} />
               ) : (
-                <RegisterForm onLogin={onLogin} apiCall={apiCall} />
+                <RegisterForm onLogin={onLogin} />
               )}
             </motion.div>
           </AnimatePresence>

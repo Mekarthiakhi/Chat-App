@@ -5,325 +5,797 @@ import {
   Badge,
   InputBase,
   IconButton,
+  Tooltip,
+  Divider,
+  Snackbar,
+  Alert,
   useTheme,
-  useMediaQuery
+  useMediaQuery,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
-import { useState, useRef, useEffect } from "react";
+import LogoutIcon from "@mui/icons-material/Logout";
+import SearchIcon from "@mui/icons-material/Search";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import DoneAllIcon from "@mui/icons-material/DoneAll";
+import EmojiEmotionsIcon from "@mui/icons-material/EmojiEmotions";
+import EmojiPicker from "emoji-picker-react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+} from "react";
+import {
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  limit,
+} from "firebase/firestore";
+import {
+  ref,
+  set,
+  onValue,
+  onDisconnect,
+  serverTimestamp as rtServerTimestamp,
+} from "firebase/database";
+import { signOut } from "firebase/auth";
+import { db, rtdb, auth } from "../firebase/firebase";
+import { useAuth } from "../App";
+import { requestNotificationPermission, onForegroundMessage } from "../firebase/messaging";
 
-const users = [
-  { name: "Ava", age: 24, online: true, gender: "girl" },
-  { name: "Mia", age: 22, online: true, gender: "girl" },
-  { name: "John", age: 28, online: true, gender: "boy" },
-  { name: "Alex", age: 30, online: false, gender: "boy" },
-  { name: "AI Assistant", age: null, online: true, type: "ai" },
-];
+/* ─── helpers ─────────────────────────────────────────── */
 
-export default function ChatDashboard() {
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [messages, setMessages] = useState({});
-  const [input, setInput] = useState("");
-  const [receiverTyping, setReceiverTyping] = useState(false);
-  const [activeTab, setActiveTab] = useState("online");
+function getChatId(uid1, uid2) {
+  return [uid1, uid2].sort().join("_");
+}
 
-  const inputRef = useRef();
-  const typingRef = useRef();
-  const messagesEndRef = useRef();
+function timeLabel(ts) {
+  if (!ts) return "";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 60_000) return "Just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000)
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+/* avatar color seeded from name */
+function avatarColor(name = "") {
+  const colors = ["#6366f1", "#ec4899", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ef4444", "#14b8a6"];
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % colors.length;
+  return colors[h];
+}
+
+/* ─── component ────────────────────────────────────────── */
+
+export default function ChatDashboard({ onLogout }) {
+  const authCtx = useAuth();
+  const me = authCtx?.user;
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-  const quickMessages = [
-    "Hey 😊",
-    "How are you?",
-    "What are you doing?",
-    "Let's catch up!",
-    "Good morning ☀️",
-    "Good night 🌙"
-  ];
+  /* sidebar state */
+  const [allUsers, setAllUsers] = useState([]);
+  const [onlineMap, setOnlineMap] = useState({});
+  const [search, setSearch] = useState("");
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [unread, setUnread] = useState({});          // uid → count
 
-  const stats = {
-    online: users.filter(u => u.online).length,
-    male: users.filter(u => u.gender === "boy").length,
-    female: users.filter(u => u.gender === "girl").length,
-  };
+  /* chat state */
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, text: "" });
 
+  const messagesEndRef = useRef();
+  const inputRef = useRef();
+
+  /* ── 1. request FCM notification permission on mount ─ */
+  useEffect(() => {
+    requestNotificationPermission().then((token) => {
+      if (token && me?.uid) {
+        // Store token in Firestore so backend can target this device
+        setDoc(doc(db, "users", me.uid), { fcmToken: token }, { merge: true })
+          .catch(err => console.error("FCM token storage error:", err));
+      }
+    }).catch(err => console.warn("Notification permission error:", err));
+
+    const unsub = onForegroundMessage((payload) => {
+      // App is in foreground → show snackbar instead of OS notification
+      const sender = payload.notification?.title || "Someone";
+      setSnackbar({ open: true, text: `${sender}: ${payload.notification?.body}` });
+    });
+    return () => unsub();
+  }, [me?.uid]);
+
+  /* ── 2. write own presence to RTDB ─────────────────── */
+  useEffect(() => {
+    if (!me?.uid) return;
+    const presenceRef = ref(rtdb, `presence/${me.uid}`);
+
+    set(presenceRef, { online: true, displayName: me.name, uid: me.uid, ts: rtServerTimestamp() });
+    onDisconnect(presenceRef).set({ online: false, displayName: me.name, uid: me.uid, ts: rtServerTimestamp() });
+
+    return () => set(presenceRef, { online: false, displayName: me.name, uid: me.uid });
+  }, [me?.uid, me?.name]);
+
+  /* ── 3. listen to all users' presence ──────────────── */
+  useEffect(() => {
+    const presenceRef = ref(rtdb, "presence");
+    const unsub = onValue(presenceRef, (snap) => {
+      const data = snap.val() || {};
+      const map = {};
+      Object.values(data).forEach((u) => {
+        if (u.uid !== me?.uid) map[u.uid] = u.online;
+      });
+      setOnlineMap(map);
+    });
+    return () => unsub();
+  }, [me?.uid]);
+
+  /* ── 4. load all registered users from Firestore ───── */
+  useEffect(() => {
+    if (!me?.uid) return;
+    const q = query(collection(db, "users"));
+    const unsub = onSnapshot(q, (snap) => {
+      const users = snap.docs
+        .map((d) => ({ uid: d.id, ...d.data() }))
+        .filter((u) => u.uid !== me.uid);
+      setAllUsers(users);
+    }, (error) => {
+      console.error("Firestore users error:", error);
+      // Fallback so the UI doesn't hang
+      setAllUsers([]);
+    });
+    return () => unsub();
+  }, [me?.uid]);
+
+  /* ── 5. upsert own user doc ─────────────────────────── */
+  useEffect(() => {
+    if (!me?.uid) return;
+    setDoc(
+      doc(db, "users", me.uid),
+      { uid: me.uid, name: me.name, email: me.email },
+      { merge: true }
+    ).catch(err => console.error("User doc sync error:", err));
+  }, [me?.uid, me?.name, me?.email]);
+
+  /* ── 6. listen to messages for selected chat ────────── */
+  useEffect(() => {
+    if (!selectedUser || !me?.uid) return;
+    const chatId = getChatId(me.uid, selectedUser.uid);
+    const q = query(
+      collection(db, "chats", chatId, "messages"),
+      orderBy("ts", "asc"),
+      limit(200)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      // clear unread for this user
+      setUnread((prev) => ({ ...prev, [selectedUser.uid]: 0 }));
+    }, (error) => {
+      console.error("Firestore messages error:", error);
+      setMessages([]);
+    });
+    return () => unsub();
+  }, [selectedUser?.uid, me?.uid]);
+
+  /* ── 7. track unread for other chats ───────────────── */
+  useEffect(() => {
+    if (!me?.uid || !allUsers.length) return;
+    const unsubs = allUsers.map((u) => {
+      const chatId = getChatId(me.uid, u.uid);
+      const q = query(
+        collection(db, "chats", chatId, "messages"),
+        orderBy("ts", "desc"),
+        limit(20)
+      );
+      return onSnapshot(q, (snap) => {
+        if (selectedUser?.uid === u.uid) return;
+        const unreadCount = snap.docs.filter(
+          (d) => d.data().senderUid !== me.uid && !d.data().read
+        ).length;
+        setUnread((prev) => ({ ...prev, [u.uid]: unreadCount }));
+      });
+    });
+    return () => unsubs.forEach((u) => u());
+  }, [allUsers, me?.uid, selectedUser?.uid]);
+
+  /* ── 8. scroll to bottom ────────────────────────────── */
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, selectedUser]);
+  }, [messages]);
 
+  /* ── 9. focus input ─────────────────────────────────── */
   useEffect(() => {
-    inputRef.current?.focus();
+    if (selectedUser) setTimeout(() => inputRef.current?.focus(), 100);
   }, [selectedUser]);
 
-  const getFilteredUsers = () => {
-    if (activeTab === "online") return users.filter(u => u.online);
-    if (activeTab === "male") return users.filter(u => u.gender === "boy");
-    if (activeTab === "female") return users.filter(u => u.gender === "girl");
-    return users;
-  };
-
-  const sendMessage = () => {
-    if (!input.trim() || !selectedUser) return;
-
-    const key = selectedUser.name;
-
-    const msg = {
-      from: "me",
-      text: input,
-      time: new Date().toLocaleTimeString()
-    };
-
-    setMessages(prev => ({
-      ...prev,
-      [key]: [...(prev[key] || []), msg]
-    }));
-
+  /* ── send message ───────────────────────────────────── */
+  const sendMessage = useCallback(async () => {
+    if (!input.trim() || !selectedUser || !me?.uid) return;
+    const chatId = getChatId(me.uid, selectedUser.uid);
+    const text = input.trim();
     setInput("");
-    setReceiverTyping(true);
+    setShowEmoji(false);
 
-    setTimeout(() => {
-      const reply = {
-        from: "them",
-        text: "Nice 🙂",
-        time: new Date().toLocaleTimeString()
-      };
+    await addDoc(collection(db, "chats", chatId, "messages"), {
+      text,
+      senderUid: me.uid,
+      senderName: me.name,
+      read: false,
+      ts: serverTimestamp(),
+    });
 
-      setMessages(prev => ({
-        ...prev,
-        [key]: [...(prev[key] || []), reply]
-      }));
+    // Update last message preview in chat metadata
+    await setDoc(
+      doc(db, "chats", chatId),
+      {
+        participants: [me.uid, selectedUser.uid],
+        lastMessage: text,
+        lastTs: serverTimestamp(),
+        [`unread_${selectedUser.uid}`]: true,
+      },
+      { merge: true }
+    );
+  }, [input, selectedUser, me]);
 
-      setReceiverTyping(false);
-    }, 1200);
+  /* ── logout ─────────────────────────────────────────── */
+  const handleLogout = () => {
+    onLogout();
   };
 
+  /* ── filtered sidebar users ─────────────────────────── */
+  const filteredUsers = allUsers.filter((u) =>
+    (u.name || u.email || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  /* ── quick messages ─────────────────────────────────── */
+  const quickMessages = ["Hey 👋", "How are you?", "What's up?", "Let's chat!", "Good morning ☀️", "😊"];
+
+  /* ─── RENDER ──────────────────────────────────────────── */
   return (
-    <Box sx={{ display: "flex", height: "100vh", background: "#0f172a", color: "#fff" }}>
-
-      {/* SIDEBAR */}
+    <Box
+      sx={{
+        display: "flex",
+        height: "100vh",
+        overflow: "hidden",
+        background: "#0b0f1a",
+        color: "#e2e8f0",
+        fontFamily: "'Inter', sans-serif",
+      }}
+    >
+      {/* ══════════════ SIDEBAR ══════════════ */}
       <Box
         sx={{
-          width: isMobile ? "100%" : 300,
-          p: 2,
-          borderRight: isMobile ? "none" : "1px solid rgba(255,255,255,0.08)",
-          display: isMobile && selectedUser ? "none" : "block"
+          width: isMobile ? "100%" : 320,
+          display: isMobile && selectedUser ? "none" : "flex",
+          flexDirection: "column",
+          borderRight: "1px solid rgba(255,255,255,0.06)",
+          background: "rgba(255,255,255,0.03)",
+          backdropFilter: "blur(12px)",
+          flexShrink: 0,
         }}
       >
-        {/* TABS */}
-        <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-          {["online", "male", "female"].map((tab) => (
-            <Box
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              sx={{
-                px: 2,
-                py: 0.7,
-                borderRadius: "20px",
-                cursor: "pointer",
-                background: activeTab === tab
-                  ? "linear-gradient(135deg,#6366f1,#9333ea)"
-                  : "rgba(255,255,255,0.08)"
-              }}
-            >
-              {tab === "online" && `Online ${stats.online}`}
-              {tab === "male" && `👦 ${stats.male}`}
-              {tab === "female" && `👧 ${stats.female}`}
-            </Box>
-          ))}
-        </Box>
-
-        {/* USER LIST */}
-        {getFilteredUsers().map((user, i) => (
-          <Box
-            key={i}
-            onClick={() => setSelectedUser(user)}
-            sx={{
-              display: "flex",
-              gap: 2,
-              p: 1.5,
-              borderRadius: "12px",
-              cursor: "pointer",
-              mb: 1,
-              background: selectedUser?.name === user.name
-                ? "rgba(255,255,255,0.12)"
-                : "rgba(255,255,255,0.05)"
-            }}
-          >
-            <Badge overlap="circular" variant="dot" color="success" invisible={!user.online}>
-              <Avatar>{user.name[0]}</Avatar>
-            </Badge>
-
-            <Box>
-              <Typography>{user.name}</Typography>
-              <Typography fontSize={12} opacity={0.6}>
-                {user.age ? `${user.age} yrs` : "AI"}
-              </Typography>
-            </Box>
-          </Box>
-        ))}
-      </Box>
-
-      {/* CHAT AREA */}
-      <Box
-        sx={{
-          flex: 1,
-          display: isMobile && !selectedUser ? "none" : "flex",
-          flexDirection: "column"
-        }}
-      >
-
-        {/* HEADER */}
+        {/* ─ sidebar header ─ */}
         <Box
           sx={{
             px: 2,
             py: 1.5,
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
             display: "flex",
             alignItems: "center",
-            gap: 1.5,
-            position: "sticky",
-            top: 0,
-            background: "#0f172a",
-            zIndex: 10
+            justifyContent: "space-between",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(99,102,241,0.08)",
           }}
         >
-          {isMobile && selectedUser && (
-            <Box
-              onClick={() => setSelectedUser(null)}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+            <Avatar
               sx={{
-                minWidth: 36,
-                height: 36,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "10px",
-                cursor: "pointer",
-                background: "rgba(255,255,255,0.08)"
+                width: 38,
+                height: 38,
+                bgcolor: avatarColor(me?.name),
+                fontSize: 16,
+                fontWeight: 700,
               }}
             >
-              ←
+              {(me?.name || me?.email || "?")[0].toUpperCase()}
+            </Avatar>
+            <Box>
+              <Typography fontWeight={700} fontSize={14} lineHeight={1.2}>
+                {me?.name || me?.email}
+              </Typography>
+              <Typography fontSize={11} sx={{ color: "#4ade80" }}>
+                ● Online
+              </Typography>
             </Box>
-          )}
+          </Box>
 
-          {selectedUser && (
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, overflow: "hidden" }}>
-              <Avatar sx={{ width: 36, height: 36 }}>
-                {selectedUser.name[0]}
-              </Avatar>
-
-              <Box sx={{ overflow: "hidden" }}>
-                <Typography
-                  fontWeight={600}
-                  sx={{
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis"
-                  }}
-                >
-                  {selectedUser.name}
-                </Typography>
-
-                <Typography fontSize={12} opacity={0.6}>
-                  {selectedUser.online ? "Online" : "Offline"}
-                </Typography>
-              </Box>
-            </Box>
-          )}
+          <Tooltip title="Logout">
+            <IconButton onClick={handleLogout} size="small" sx={{ color: "#94a3b8" }}>
+              <LogoutIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Box>
 
-        {/* MESSAGES */}
-        <Box
-          sx={{
-            flex: 1,
-            overflowY: "auto",
-            px: 2,
-            py: 2,
-            display: "flex",
-            flexDirection: "column",
-            gap: 1
-          }}
-        >
-          {(messages[selectedUser?.name] || []).map((msg, i) => {
-            const isMe = msg.from === "me";
+        {/* ─ search ─ */}
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              px: 1.5,
+              py: 0.8,
+              borderRadius: "12px",
+              background: "rgba(255,255,255,0.06)",
+            }}
+          >
+            <SearchIcon sx={{ fontSize: 18, color: "#64748b" }} />
+            <InputBase
+              fullWidth
+              placeholder="Search or start new chat"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              sx={{ fontSize: 13, color: "#e2e8f0", "& input::placeholder": { color: "#64748b" } }}
+            />
+          </Box>
+        </Box>
+
+        {/* ─ online banner ─ */}
+        <Box sx={{ px: 2, pb: 0.5 }}>
+          <Typography fontSize={11} sx={{ color: "#64748b", textTransform: "uppercase", letterSpacing: 1 }}>
+            {Object.values(onlineMap).filter(Boolean).length} online
+          </Typography>
+        </Box>
+
+        {/* ─ user list ─ */}
+        <Box sx={{ flex: 1, overflowY: "auto", px: 1 }}>
+          {filteredUsers.length === 0 && (
+            <Typography sx={{ color: "#475569", textAlign: "center", mt: 4, fontSize: 13 }}>
+              No users found
+            </Typography>
+          )}
+          {filteredUsers.map((user) => {
+            const isOnline = !!onlineMap[user.uid];
+            const isSelected = selectedUser?.uid === user.uid;
+            const unreadCount = unread[user.uid] || 0;
 
             return (
-              <Box key={i} sx={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
-                <Box
+              <Box
+                key={user.uid}
+                onClick={() => setSelectedUser(user)}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.5,
+                  px: 1.5,
+                  py: 1.2,
+                  borderRadius: "14px",
+                  mb: 0.5,
+                  cursor: "pointer",
+                  background: isSelected
+                    ? "linear-gradient(135deg,rgba(99,102,241,0.25),rgba(147,51,234,0.15))"
+                    : "transparent",
+                  border: isSelected ? "1px solid rgba(99,102,241,0.3)" : "1px solid transparent",
+                  transition: "all 0.15s ease",
+                  "&:hover": {
+                    background: isSelected
+                      ? "linear-gradient(135deg,rgba(99,102,241,0.25),rgba(147,51,234,0.15))"
+                      : "rgba(255,255,255,0.05)",
+                  },
+                }}
+              >
+                <Badge
+                  overlap="circular"
+                  variant="dot"
+                  invisible={!isOnline}
                   sx={{
-                    background: isMe
-                      ? "linear-gradient(135deg,#6366f1,#9333ea)"
-                      : "rgba(255,255,255,0.1)",
-                    px: 2,
-                    py: 1,
-                    borderRadius: "16px",
-                    maxWidth: isMobile ? "80%" : "60%"
+                    "& .MuiBadge-dot": {
+                      bgcolor: "#4ade80",
+                      border: "2px solid #0b0f1a",
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                    },
                   }}
                 >
-                  {msg.text}
-                  <Typography fontSize={10}>{msg.time}</Typography>
+                  <Avatar
+                    sx={{
+                      width: 44,
+                      height: 44,
+                      bgcolor: avatarColor(user.name || user.email),
+                      fontSize: 17,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {(user.name || user.email || "?")[0].toUpperCase()}
+                  </Avatar>
+                </Badge>
+
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <Typography fontWeight={600} fontSize={14} noWrap>
+                      {user.name || user.email}
+                    </Typography>
+                    {unreadCount > 0 && (
+                      <Box
+                        sx={{
+                          minWidth: 20,
+                          height: 20,
+                          borderRadius: "10px",
+                          bgcolor: "#22c55e",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: "#000",
+                          px: 0.7,
+                        }}
+                      >
+                        {unreadCount}
+                      </Box>
+                    )}
+                  </Box>
+                  <Typography fontSize={12} sx={{ color: isOnline ? "#4ade80" : "#64748b" }}>
+                    {isOnline ? "Online" : "Offline"}
+                  </Typography>
                 </Box>
               </Box>
             );
           })}
-
-          {receiverTyping && selectedUser && (
-            <Typography fontSize={12} opacity={0.5}>
-              {selectedUser.name} is typing...
-            </Typography>
-          )}
-
-          <div ref={messagesEndRef} />
         </Box>
+      </Box>
 
-        {/* FOOTER */}
-        {selectedUser && (
-          <Box sx={{ borderTop: "1px solid rgba(255,255,255,0.08)", p: 2 }}>
+      {/* ══════════════ CHAT AREA ══════════════ */}
+      <Box
+        sx={{
+          flex: 1,
+          display: isMobile && !selectedUser ? "none" : "flex",
+          flexDirection: "column",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        {!selectedUser ? (
+          /* ── empty state ── */
+          <Box
+            sx={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 2,
+              color: "#475569",
+            }}
+          >
+            <Box sx={{ fontSize: 64 }}>💬</Box>
+            <Typography fontWeight={600} fontSize={18}>
+              Select a conversation
+            </Typography>
+            <Typography fontSize={13}>
+              Pick someone from the left to start chatting
+            </Typography>
+          </Box>
+        ) : (
+          <>
+            {/* ─ chat header ─ */}
+            <Box
+              sx={{
+                px: 2,
+                py: 1.2,
+                display: "flex",
+                alignItems: "center",
+                gap: 1.5,
+                borderBottom: "1px solid rgba(255,255,255,0.06)",
+                background: "rgba(255,255,255,0.03)",
+                backdropFilter: "blur(12px)",
+                zIndex: 10,
+              }}
+            >
+              {isMobile && (
+                <IconButton
+                  size="small"
+                  onClick={() => setSelectedUser(null)}
+                  sx={{ color: "#94a3b8" }}
+                >
+                  <ArrowBackIcon fontSize="small" />
+                </IconButton>
+              )}
+
+              <Badge
+                overlap="circular"
+                variant="dot"
+                invisible={!onlineMap[selectedUser.uid]}
+                sx={{
+                  "& .MuiBadge-dot": {
+                    bgcolor: "#4ade80",
+                    border: "2px solid #0b0f1a",
+                    width: 10,
+                    height: 10,
+                  },
+                }}
+              >
+                <Avatar
+                  sx={{
+                    width: 38,
+                    height: 38,
+                    bgcolor: avatarColor(selectedUser.name || selectedUser.email),
+                    fontSize: 15,
+                    fontWeight: 700,
+                  }}
+                >
+                  {(selectedUser.name || selectedUser.email || "?")[0].toUpperCase()}
+                </Avatar>
+              </Badge>
+
+              <Box>
+                <Typography fontWeight={700} fontSize={15}>
+                  {selectedUser.name || selectedUser.email}
+                </Typography>
+                <Typography fontSize={12} sx={{ color: onlineMap[selectedUser.uid] ? "#4ade80" : "#64748b" }}>
+                  {onlineMap[selectedUser.uid] ? "Online" : "Offline"}
+                </Typography>
+              </Box>
+            </Box>
+
+            {/* ─ messages ─ */}
+            <Box
+              sx={{
+                flex: 1,
+                overflowY: "auto",
+                px: { xs: 1.5, sm: 3 },
+                py: 2,
+                display: "flex",
+                flexDirection: "column",
+                gap: 0.5,
+                background:
+                  "radial-gradient(ellipse at 20% 50%, rgba(99,102,241,0.04), transparent 60%), #0b0f1a",
+              }}
+            >
+              {messages.length === 0 && (
+                <Typography
+                  sx={{ textAlign: "center", color: "#475569", fontSize: 13, mt: 8 }}
+                >
+                  No messages yet. Say hello! 👋
+                </Typography>
+              )}
+
+              {messages.map((msg, i) => {
+                const isMe = msg.senderUid === me?.uid;
+                const showTime =
+                  i === 0 ||
+                  (msg.ts && messages[i - 1]?.ts &&
+                    msg.ts.toDate?.().getDate?.() !==
+                    messages[i - 1].ts.toDate?.().getDate?.());
+
+                return (
+                  <Box key={msg.id}>
+                    {showTime && msg.ts && (
+                      <Typography
+                        sx={{
+                          textAlign: "center",
+                          fontSize: 11,
+                          color: "#475569",
+                          my: 1.5,
+                        }}
+                      >
+                        {msg.ts.toDate
+                          ? msg.ts.toDate().toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })
+                          : ""}
+                      </Typography>
+                    )}
+
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: isMe ? "flex-end" : "flex-start",
+                        mb: 0.3,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          maxWidth: isMobile ? "80%" : "58%",
+                          px: 1.8,
+                          py: 1,
+                          borderRadius: isMe
+                            ? "18px 18px 4px 18px"
+                            : "18px 18px 18px 4px",
+                          background: isMe
+                            ? "linear-gradient(135deg, #6366f1, #9333ea)"
+                            : "rgba(255,255,255,0.09)",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                          position: "relative",
+                        }}
+                      >
+                        <Typography fontSize={14} sx={{ lineHeight: 1.5, wordBreak: "break-word" }}>
+                          {msg.text}
+                        </Typography>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "flex-end",
+                            gap: 0.4,
+                            mt: 0.3,
+                          }}
+                        >
+                          <Typography fontSize={10} sx={{ color: "rgba(255,255,255,0.45)" }}>
+                            {timeLabel(msg.ts)}
+                          </Typography>
+                          {isMe && (
+                            <DoneAllIcon
+                              sx={{ fontSize: 13, color: msg.read ? "#60a5fa" : "rgba(255,255,255,0.45)" }}
+                            />
+                          )}
+                        </Box>
+                      </Box>
+                    </Box>
+                  </Box>
+                );
+              })}
+
+              <div ref={messagesEndRef} />
+            </Box>
+
+            {/* ─ emoji picker ─ */}
+            {showEmoji && (
+              <Box
+                sx={{
+                  position: "absolute",
+                  bottom: 72,
+                  left: isMobile ? 8 : 24,
+                  zIndex: 100,
+                }}
+              >
+                <EmojiPicker
+                  theme="dark"
+                  onEmojiClick={(e) => {
+                    setInput((p) => p + e.emoji);
+                    inputRef.current?.focus();
+                  }}
+                  height={340}
+                  width={300}
+                  previewConfig={{ showPreview: false }}
+                />
+              </Box>
+            )}
+
+            {/* ─ quick message chips (shown when input is empty) ─ */}
             {input.length === 0 && (
-              <Box sx={{ display: "flex", gap: 1, mb: 1, flexWrap: "wrap" }}>
-                {quickMessages.map((msg, i) => (
+              <Box
+                sx={{
+                  px: 2,
+                  pb: 0.5,
+                  display: "flex",
+                  gap: 1,
+                  flexWrap: "wrap",
+                  background: "#0b0f1a",
+                }}
+              >
+                {quickMessages.map((m, i) => (
                   <Box
                     key={i}
-                    onClick={() => setInput(msg)}
+                    onClick={() => {
+                      setInput(m);
+                      setShowEmoji(false);
+                      setTimeout(() => inputRef.current?.focus(), 50);
+                    }}
                     sx={{
-                      px: 2,
-                      py: 0.5,
-                      borderRadius: "20px",
+                      px: 1.5,
+                      py: 0.4,
+                      borderRadius: "16px",
                       fontSize: 12,
                       cursor: "pointer",
-                      background: "rgba(255,255,255,0.08)"
+                      background: "rgba(99,102,241,0.12)",
+                      border: "1px solid rgba(99,102,241,0.25)",
+                      color: "#a5b4fc",
+                      transition: "all 0.15s",
+                      "&:hover": { background: "rgba(99,102,241,0.25)" },
                     }}
                   >
-                    {msg}
+                    {m}
                   </Box>
                 ))}
               </Box>
             )}
 
-            <Box sx={{ display: "flex", gap: 1 }}>
+            {/* ─ input bar ─ */}
+            <Box
+              sx={{
+                px: 2,
+                py: 1.2,
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                borderTop: "1px solid rgba(255,255,255,0.06)",
+                background: "rgba(255,255,255,0.03)",
+              }}
+            >
+              <IconButton
+                size="small"
+                onClick={() => setShowEmoji((p) => !p)}
+                sx={{ color: showEmoji ? "#6366f1" : "#64748b" }}
+              >
+                <EmojiEmotionsIcon />
+              </IconButton>
+
               <InputBase
                 fullWidth
-                placeholder="Type message..."
+                multiline
+                maxRows={4}
+                placeholder="Type a message…"
                 value={input}
                 inputRef={inputRef}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
                 sx={{
                   px: 2,
                   py: 1,
-                  borderRadius: "20px",
-                  background: "rgba(255,255,255,0.1)",
-                  color: "#fff"
+                  borderRadius: "22px",
+                  background: "rgba(255,255,255,0.07)",
+                  color: "#e2e8f0",
+                  fontSize: 14,
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  "& textarea::placeholder": { color: "#64748b" },
                 }}
               />
 
-              <IconButton onClick={sendMessage}>
-                <SendIcon sx={{ color: "#fff" }} />
+              <IconButton
+                onClick={sendMessage}
+                disabled={!input.trim()}
+                sx={{
+                  background: input.trim()
+                    ? "linear-gradient(135deg,#6366f1,#9333ea)"
+                    : "rgba(255,255,255,0.07)",
+                  borderRadius: "12px",
+                  width: 42,
+                  height: 42,
+                  transition: "all 0.2s",
+                  "&:hover": { transform: "scale(1.08)" },
+                  "&:disabled": { opacity: 0.4 },
+                }}
+              >
+                <SendIcon sx={{ color: "#fff", fontSize: 18 }} />
               </IconButton>
             </Box>
-          </Box>
+          </>
         )}
       </Box>
+
+      {/* ── foreground notification snackbar ── */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar({ open: false, text: "" })}
+        anchorOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <Alert
+          severity="info"
+          onClose={() => setSnackbar({ open: false, text: "" })}
+          sx={{ background: "#1e293b", color: "#e2e8f0" }}
+        >
+          {snackbar.text}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
