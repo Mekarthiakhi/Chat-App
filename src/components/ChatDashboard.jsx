@@ -7,11 +7,14 @@ import {
   IconButton,
   Tooltip,
   Divider,
-  Snackbar,
-  Alert,
+
+
   useTheme,
   useMediaQuery,
+  Snackbar,
+  Alert,
 } from "@mui/material";
+import io from "socket.io-client";
 import SendIcon from "@mui/icons-material/Send";
 import LogoutIcon from "@mui/icons-material/Logout";
 import SearchIcon from "@mui/icons-material/Search";
@@ -25,30 +28,10 @@ import {
   useEffect,
   useCallback,
 } from "react";
-import {
-  collection,
-  addDoc,
-  query,
-  orderBy,
-  onSnapshot,
-  serverTimestamp,
-  doc,
-  setDoc,
-  getDoc,
-  getDocs,
-  limit,
-} from "firebase/firestore";
-import {
-  ref,
-  set,
-  onValue,
-  onDisconnect,
-  serverTimestamp as rtServerTimestamp,
-} from "firebase/database";
-import { signOut } from "firebase/auth";
 import { db, rtdb, auth } from "../firebase/firebase";
 import { useAuth } from "../App";
 import { requestNotificationPermission, onForegroundMessage } from "../firebase/messaging";
+import { getUsers, updateFcmToken, API_URL } from "../services/apiAuth";
 
 /* ─── helpers ─────────────────────────────────────────── */
 
@@ -100,14 +83,14 @@ export default function ChatDashboard({ onLogout }) {
 
   const messagesEndRef = useRef();
   const inputRef = useRef();
+  const socketRef = useRef();
 
   /* ── 1. request FCM notification permission on mount ─ */
   useEffect(() => {
     requestNotificationPermission().then((token) => {
       if (token && me?.uid) {
-        // Store token in Firestore so backend can target this device
-        setDoc(doc(db, "users", me.uid), { fcmToken: token }, { merge: true })
-          .catch(err => console.error("FCM token storage error:", err));
+        // Store token in MongoDB so backend can target this device
+        updateFcmToken(token).catch(err => console.error("FCM token storage error:", err));
       }
     }).catch(err => console.warn("Notification permission error:", err));
 
@@ -119,98 +102,88 @@ export default function ChatDashboard({ onLogout }) {
     return () => unsub();
   }, [me?.uid]);
 
-  /* ── 2. write own presence to RTDB ─────────────────── */
+  /* ── 2. Socket.io initialization & presence ────────── */
   useEffect(() => {
     if (!me?.uid) return;
-    const presenceRef = ref(rtdb, `presence/${me.uid}`);
 
-    set(presenceRef, { online: true, displayName: me.name, uid: me.uid, ts: rtServerTimestamp() });
-    onDisconnect(presenceRef).set({ online: false, displayName: me.name, uid: me.uid, ts: rtServerTimestamp() });
+    // Connect to Node.js backend (dynamic URL)
+    const backendBaseUrl = API_URL.replace('/api', '');
+    const socket = io(backendBaseUrl);
+    socketRef.current = socket;
 
-    return () => set(presenceRef, { online: false, displayName: me.name, uid: me.uid });
-  }, [me?.uid, me?.name]);
+    socket.emit("user_join", { userId: me.uid, username: me.name });
 
-  /* ── 3. listen to all users' presence ──────────────── */
-  useEffect(() => {
-    const presenceRef = ref(rtdb, "presence");
-    const unsub = onValue(presenceRef, (snap) => {
-      const data = snap.val() || {};
-      const map = {};
-      Object.values(data).forEach((u) => {
-        if (u.uid !== me?.uid) map[u.uid] = u.online;
+    socket.on("new_private_message", (msg) => {
+      // If the message is for the current selected chat, add it
+      setMessages((prev) => {
+        const isFromSelected = msg.sender._id === selectedUser?.uid || msg.to === selectedUser?.uid;
+        if (isFromSelected) {
+          // Check for duplicates
+          if (prev.find(m => m._id === msg._id)) return prev;
+          return [...prev, { ...msg, senderUid: msg.sender._id, ts: msg.createdAt }];
+        }
+        return prev;
       });
-      setOnlineMap(map);
+
+      // Update unread if not selected
+      if (msg.sender._id !== selectedUser?.uid) {
+        setUnread((prev) => ({ ...prev, [msg.sender._id]: (prev[msg.sender._id] || 0) + 1 }));
+        setSnackbar({ open: true, text: `New message from ${msg.sender.username}` });
+      }
     });
-    return () => unsub();
-  }, [me?.uid]);
+
+    socket.on("user_online", ({ userId }) => {
+      setOnlineMap((prev) => ({ ...prev, [userId]: true }));
+    });
+
+    socket.on("user_offline", ({ userId }) => {
+      setOnlineMap((prev) => ({ ...prev, [userId]: false }));
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [me?.uid, selectedUser?.uid]);
 
   /* ── 4. load all registered users from Firestore ───── */
   useEffect(() => {
     if (!me?.uid) return;
-    const q = query(collection(db, "users"));
-    const unsub = onSnapshot(q, (snap) => {
-      const users = snap.docs
-        .map((d) => ({ uid: d.id, ...d.data() }))
-        .filter((u) => u.uid !== me.uid);
-      setAllUsers(users);
-    }, (error) => {
-      console.error("Firestore users error:", error);
-      // Fallback so the UI doesn't hang
-      setAllUsers([]);
-    });
-    return () => unsub();
+    const fetchUsers = async () => {
+      try {
+        const users = await getUsers();
+        const mappedUsers = users.map(u => ({ ...u, uid: u._id, name: u.username }));
+        setAllUsers(mappedUsers);
+      } catch (err) {
+        console.error("Fetch users error:", err);
+      }
+    };
+    fetchUsers();
+    const interval = setInterval(fetchUsers, 10000); // Poll every 10s for new users
+    return () => clearInterval(interval);
   }, [me?.uid]);
 
-  /* ── 5. upsert own user doc ─────────────────────────── */
-  useEffect(() => {
-    if (!me?.uid) return;
-    setDoc(
-      doc(db, "users", me.uid),
-      { uid: me.uid, name: me.name, email: me.email },
-      { merge: true }
-    ).catch(err => console.error("User doc sync error:", err));
-  }, [me?.uid, me?.name, me?.email]);
+  /* ── 5. User doc sync removed (handled by MongoDB) ── */
 
-  /* ── 6. listen to messages for selected chat ────────── */
+  /* ── 6. Load initial private messages from API ─────── */
   useEffect(() => {
     if (!selectedUser || !me?.uid) return;
-    const chatId = getChatId(me.uid, selectedUser.uid);
-    const q = query(
-      collection(db, "chats", chatId, "messages"),
-      orderBy("ts", "asc"),
-      limit(200)
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      // clear unread for this user
-      setUnread((prev) => ({ ...prev, [selectedUser.uid]: 0 }));
-    }, (error) => {
-      console.error("Firestore messages error:", error);
-      setMessages([]);
-    });
-    return () => unsub();
+
+    const fetchMessages = async () => {
+      try {
+        const res = await fetch(`${API_URL}/messages/private/${selectedUser.uid}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('chat_token')}` }
+        });
+        const data = await res.json();
+        setMessages(data.map(m => ({ ...m, senderUid: m.sender._id, ts: m.createdAt })));
+      } catch (err) {
+        console.error("Fetch messages error:", err);
+      }
+    };
+
+    fetchMessages();
   }, [selectedUser?.uid, me?.uid]);
 
-  /* ── 7. track unread for other chats ───────────────── */
-  useEffect(() => {
-    if (!me?.uid || !allUsers.length) return;
-    const unsubs = allUsers.map((u) => {
-      const chatId = getChatId(me.uid, u.uid);
-      const q = query(
-        collection(db, "chats", chatId, "messages"),
-        orderBy("ts", "desc"),
-        limit(20)
-      );
-      return onSnapshot(q, (snap) => {
-        if (selectedUser?.uid === u.uid) return;
-        const unreadCount = snap.docs.filter(
-          (d) => d.data().senderUid !== me.uid && !d.data().read
-        ).length;
-        setUnread((prev) => ({ ...prev, [u.uid]: unreadCount }));
-      });
-    });
-    return () => unsubs.forEach((u) => u());
-  }, [allUsers, me?.uid, selectedUser?.uid]);
+  /* ── 7. Track unread removed (handled by Socket.io listener) ── */
 
   /* ── 8. scroll to bottom ────────────────────────────── */
   useEffect(() => {
@@ -224,31 +197,19 @@ export default function ChatDashboard({ onLogout }) {
 
   /* ── send message ───────────────────────────────────── */
   const sendMessage = useCallback(async () => {
-    if (!input.trim() || !selectedUser || !me?.uid) return;
-    const chatId = getChatId(me.uid, selectedUser.uid);
+    if (!input.trim() || !selectedUser || !me?.uid || !socketRef.current) return;
+
     const text = input.trim();
     setInput("");
     setShowEmoji(false);
 
-    await addDoc(collection(db, "chats", chatId, "messages"), {
-      text,
-      senderUid: me.uid,
-      senderName: me.name,
-      read: false,
-      ts: serverTimestamp(),
+    socketRef.current.emit("private_message", {
+      senderId: me.uid,
+      receiverId: selectedUser.uid,
+      content: text,
+      senderName: me.name
     });
 
-    // Update last message preview in chat metadata
-    await setDoc(
-      doc(db, "chats", chatId),
-      {
-        participants: [me.uid, selectedUser.uid],
-        lastMessage: text,
-        lastTs: serverTimestamp(),
-        [`unread_${selectedUser.uid}`]: true,
-      },
-      { merge: true }
-    );
   }, [input, selectedUser, me]);
 
   /* ── logout ─────────────────────────────────────────── */

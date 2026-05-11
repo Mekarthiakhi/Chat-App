@@ -1,11 +1,39 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-require('dotenv').config();
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import mongoose from 'mongoose';
+import cors from 'cors';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
+import admin from 'firebase-admin';
+import { readFileSync } from 'fs';
+import nodemailer from 'nodemailer';
+import crypto from 'crypto';
+
+dotenv.config();
+
+// ─── Firebase Admin Setup ──────────────────────────────────────────────────────
+try {
+  const serviceAccount = JSON.parse(
+    readFileSync(new URL('./firebase-service-account.json', import.meta.url))
+  );
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log('✅ Firebase Admin initialized');
+} catch (err) {
+  console.warn('⚠️ Firebase Admin could not be initialized. Service account file missing?');
+}
+
+// ─── Nodemailer Setup ─────────────────────────────────────────────────────────
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -17,37 +45,46 @@ app.use(cors());
 app.use(express.json());
 
 // ─── MongoDB Atlas Connection ──────────────────────────────────────────────────
-mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://<user>:<pass>@cluster0.mongodb.net/datingchat', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => console.log('✅ MongoDB Atlas connected'))
-  .catch(err => console.error('❌ MongoDB error:', err));
+mongoose.connect(process.env.MONGODB_URI).then(() => console.log('✅ MongoDB Atlas connected'))
+  .catch(err => {
+    console.error('❌ MongoDB error:', err.message);
+    if (err.message.includes('authentication failed')) {
+      console.error('👉 TIP: Double-check your MongoDB Atlas Username/Password. If your password has special characters like @, use %40 instead.');
+    }
+  });
 
 // ─── Schemas ───────────────────────────────────────────────────────────────────
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
-  email:    { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  age:      { type: Number },
-  gender:   { type: String, enum: ['Male','Female','Other'] },
-  country:  { type: String },
-  avatar:   { type: String, default: '' },
-  bio:      { type: String, default: '' },
+  age: { type: Number },
+  gender: { type: String, enum: ['Male', 'Female', 'Other'] },
+  country: { type: String },
+  avatar: { type: String, default: '' },
+  bio: { type: String, default: '' },
   isOnline: { type: Boolean, default: false },
   lastSeen: { type: Date, default: Date.now },
-  createdAt:{ type: Date, default: Date.now }
-});
-
-const MessageSchema = new mongoose.Schema({
-  sender:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  receiver:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // null = public room
-  room:      { type: String, default: 'general' },
-  content:   { type: String, required: true },
-  type:      { type: String, enum: ['text','emoji','image'], default: 'text' },
+  fcmToken: { type: String, default: '' },
+  isVerified: { type: Boolean, default: false },
+  verificationToken: { type: String },
+  magicToken: { type: String },
+  magicTokenExpires: { type: Date },
+  resetPasswordToken: { type: String },
+  resetPasswordExpires: { type: Date },
   createdAt: { type: Date, default: Date.now }
 });
 
-const User    = mongoose.model('User', UserSchema);
+const MessageSchema = new mongoose.Schema({
+  sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  receiver: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // null = public room
+  room: { type: String, default: 'general' },
+  content: { type: String, required: true },
+  type: { type: String, enum: ['text', 'emoji', 'image'], default: 'text' },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', UserSchema);
 const Message = mongoose.model('Message', MessageSchema);
 
 // ─── Auth Middleware ───────────────────────────────────────────────────────────
@@ -55,21 +92,64 @@ const auth = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token' });
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET || 'secret123');
+    req.user = jwt.verify(token, process.env.JWT_SECRET || 'your_super_secret_jwt_key_change_this_in_production');
     next();
   } catch { res.status(401).json({ error: 'Invalid token' }); }
 };
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
+app.get('/api/ping', (req, res) => res.json({ message: 'pong' }));
+
 app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password, age, gender, country } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    if (existingUser) {
+      return res.status(400).json({ error: existingUser.email === email ? 'Email already in use' : 'Username taken' });
+    }
+
     const hash = await bcrypt.hash(password, 10);
-    const user = await User.create({ username, email, password: hash, age, gender, country });
-    const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret123', { expiresIn: '7d' });
-    res.json({ token, user: { id: user._id, username: user.username, gender: user.gender, country: user.country, age: user.age } });
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+
+    const user = await User.create({
+      username, email, password: hash, age, gender, country, verificationToken
+    });
+
+    // Send Verification Email
+    const backendUrl = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+    const verificationUrl = `${backendUrl}/api/verify-email/${verificationToken}`;
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Verify your email for Chat App',
+      html: `<h2>Welcome to Chat App!</h2><p>Please click the link below to verify your email:</p><a href="${verificationUrl}">${verificationUrl}</a>`
+    };
+
+    transporter.sendMail(mailOptions, (err) => {
+      if (err) console.error('❌ Email error:', err);
+    });
+
+    res.json({ message: 'Registration successful! Please check your email to verify your account.' });
   } catch (e) {
-    res.status(400).json({ error: e.message.includes('duplicate') ? 'Username or email already exists' : e.message });
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get('/api/verify-email/:token', async (req, res) => {
+  try {
+    const user = await User.findOne({ verificationToken: req.params.token });
+    if (!user) return res.status(400).send('<h1>Invalid or expired token</h1>');
+
+    user.isVerified = true;
+    user.verificationToken = undefined;
+    await user.save();
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    res.send(`<h1>Email verified! You can now log in.</h1><script>setTimeout(()=>window.location="${frontendUrl}", 3000)</script>`);
+  } catch (e) {
+    res.status(500).send('Error verifying email');
   }
 });
 
@@ -77,12 +157,121 @@ app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     const user = await User.findOne({ $or: [{ username }, { email: username }] });
-    if (!user || !await bcrypt.compare(password, user.password))
+
+    // Security: Use same error for both non-existent user and wrong password
+    if (!user || !await bcrypt.compare(password, user.password)) {
       return res.status(400).json({ error: 'Invalid credentials' });
+    }
+
+    if (!user.isVerified) {
+      return res.status(400).json({ error: 'Please verify your email first' });
+    }
     await User.findByIdAndUpdate(user._id, { isOnline: true });
     const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret123', { expiresIn: '7d' });
     res.json({ token, user: { id: user._id, username: user.username, gender: user.gender, country: user.country, age: user.age, bio: user.bio } });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    console.log(`📩 Password reset requested for: ${email}`);
+    const user = await User.findOne({ email });
+
+    // Security: Don't tell the user if the email exists or not
+    if (!user) {
+      return res.json({ message: 'If that email exists, a reset link has been sent.' });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    await user.save();
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Password Reset Request',
+      html: `<h2>Password Reset</h2><p>Click below to reset your password:</p><a href="${resetUrl}">${resetUrl}</a>`
+    };
+
+    transporter.sendMail(mailOptions);
+    res.json({ message: 'If that email exists, a reset link has been sent.' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) return res.status(400).json({ error: 'Invalid or expired token' });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ message: 'Password reset successful! You can now log in.' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/magic-link', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const magicToken = crypto.randomBytes(32).toString('hex');
+    user.magicToken = magicToken;
+    user.magicTokenExpires = Date.now() + 15 * 60 * 1000; // 15 mins
+    await user.save();
+
+    const backendUrl = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+    const magicUrl = `${backendUrl}/api/auth/verify-magic/${magicToken}`;
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Login to Chat App',
+      html: `<h2>Login Link</h2><p>Click below to log in instantly (valid for 15 mins):</p><a href="${magicUrl}">${magicUrl}</a>`
+    };
+
+    transporter.sendMail(mailOptions);
+    res.json({ message: 'Login link sent to your email!' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/auth/verify-magic/:token', async (req, res) => {
+  try {
+    const user = await User.findOne({
+      magicToken: req.params.token,
+      magicTokenExpires: { $gt: Date.now() }
+    });
+    if (!user) return res.status(400).send('<h1>Link invalid or expired</h1>');
+
+    user.magicToken = undefined;
+    user.magicTokenExpires = undefined;
+    user.isVerified = true; // Magic link also verifies the email
+    await user.save();
+
+    const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret123', { expiresIn: '7d' });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUser = JSON.stringify({ id: user._id, username: user.username });
+    res.send(`
+      <script>
+        localStorage.setItem('chat_token', '${token}');
+        localStorage.setItem('chat_user', '${frontendUser}');
+        window.location.href = '${frontendUrl}';
+      </script>
+      <h1>Logging you in...</h1>
+    `);
+  } catch (e) { res.status(500).send('Error during magic login'); }
 });
 
 app.get('/api/users/online', auth, async (req, res) => {
@@ -90,6 +279,14 @@ app.get('/api/users/online', auth, async (req, res) => {
     .select('username age gender country avatar isOnline lastSeen')
     .limit(50);
   res.json(users);
+});
+
+app.get('/api/users', auth, async (req, res) => {
+  try {
+    const users = await User.find({ _id: { $ne: req.user.id } })
+      .select('username age gender country avatar isOnline lastSeen');
+    res.json(users);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/messages/public', auth, async (req, res) => {
@@ -109,8 +306,33 @@ app.get('/api/messages/private/:userId', auth, async (req, res) => {
   res.json(messages);
 });
 
+app.post('/api/users/fcm-token', auth, async (req, res) => {
+  try {
+    const { fcmToken } = req.body;
+    await User.findByIdAndUpdate(req.user.id, { fcmToken });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Socket.io ────────────────────────────────────────────────────────────────
 const onlineUsers = new Map();
+
+// Helper to send FCM notification
+async function sendNotification(userId, title, body) {
+  try {
+    const user = await User.findById(userId);
+    if (user && user.fcmToken) {
+      const message = {
+        notification: { title, body },
+        token: user.fcmToken,
+      };
+      await admin.messaging().send(message);
+      console.log('🚀 Notification sent to:', user.username);
+    }
+  } catch (err) {
+    console.error('❌ FCM Error:', err);
+  }
+}
 
 io.on('connection', (socket) => {
   console.log('🔌 Socket connected:', socket.id);
@@ -118,7 +340,9 @@ io.on('connection', (socket) => {
   socket.on('user_join', async ({ userId, username }) => {
     onlineUsers.set(userId, { socketId: socket.id, username });
     socket.userId = userId;
-    await User.findByIdAndUpdate(userId, { isOnline: true });
+    if (mongoose.connection.readyState === 1) {
+      await User.findByIdAndUpdate(userId, { isOnline: true }).catch(e => console.error("Presence Error:", e));
+    }
     io.emit('user_online', { userId, username, onlineCount: onlineUsers.size });
   });
 
@@ -139,7 +363,14 @@ io.on('connection', (socket) => {
       const msg = await Message.create({ sender: senderId, receiver: receiverId, content });
       const receiverSocket = onlineUsers.get(receiverId);
       const payload = { _id: msg._id, content, createdAt: msg.createdAt, sender: { _id: senderId, username: senderName } };
-      if (receiverSocket) io.to(receiverSocket.socketId).emit('new_private_message', { ...payload, from: senderId });
+
+      if (receiverSocket) {
+        io.to(receiverSocket.socketId).emit('new_private_message', { ...payload, from: senderId });
+      } else {
+        // User is offline, send push notification
+        sendNotification(receiverId, `New message from ${senderName}`, content);
+      }
+
       socket.emit('new_private_message', { ...payload, to: receiverId });
     } catch (e) { console.error(e); }
   });
@@ -156,7 +387,9 @@ io.on('connection', (socket) => {
   socket.on('disconnect', async () => {
     if (socket.userId) {
       onlineUsers.delete(socket.userId);
-      await User.findByIdAndUpdate(socket.userId, { isOnline: false, lastSeen: new Date() });
+      if (mongoose.connection.readyState === 1) {
+        await User.findByIdAndUpdate(socket.userId, { isOnline: false, lastSeen: new Date() }).catch(e => console.error("Offline Error:", e));
+      }
       io.emit('user_offline', { userId: socket.userId, onlineCount: onlineUsers.size });
     }
   });

@@ -5,15 +5,21 @@ import {
   Typography,
   CircularProgress,
   Alert,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Select,
 } from "@mui/material";
 import { useState } from "react";
-import { registerUser } from "../../firebase/authService";
+import { registerUser } from "../../services/apiAuth";
 
 const RegisterForm = ({ onLogin }) => {
   const [form, setForm] = useState({
     username: "",
     email: "",
     password: "",
+    age: "",
+    gender: "Male",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -25,14 +31,11 @@ const RegisterForm = ({ onLogin }) => {
     setSuccess(false);
     setLoading(true);
     try {
-      await registerUser(
-        form.email,
-        form.password,
-        form.username
-      );
+      const data = await registerUser(form);
       setSuccess(true);
     } catch (err) {
-      setError(friendlyError(err.code));
+      const msg = err.response?.data?.error || err.message || "Registration failed";
+      setError(friendlyError(msg));
     } finally {
       setLoading(false);
     }
@@ -41,13 +44,16 @@ const RegisterForm = ({ onLogin }) => {
   function friendlyError(code) {
     switch (code) {
       case "auth/email-already-in-use":
+      case "Email already in use":
         return "This email is already registered. Try logging in.";
+      case "Username taken":
+        return "This username is already taken.";
       case "auth/invalid-email":
         return "Please enter a valid email address.";
       case "auth/weak-password":
         return "Password must be at least 6 characters.";
       default:
-        return "Registration failed. Please try again.";
+        return code || "Registration failed. Please try again.";
     }
   }
 
@@ -114,10 +120,40 @@ const RegisterForm = ({ onLogin }) => {
         type="password"
         fullWidth
         margin="normal"
-        InputLabelProps={{ shrink: true }}
         onChange={(e) => setForm({ ...form, password: e.target.value })}
         sx={fieldSx}
       />
+
+      <Box sx={{ display: "flex", gap: 2, mt: 1 }}>
+        <TextField
+          label="Age"
+          type="number"
+          fullWidth
+          InputLabelProps={{ shrink: true }}
+          value={form.age}
+          onChange={(e) => setForm({ ...form, age: e.target.value })}
+          sx={fieldSx}
+        />
+
+        <FormControl fullWidth sx={fieldSx}>
+          <InputLabel shrink>Gender</InputLabel>
+          <Select
+            value={form.gender}
+            label="Gender"
+            onChange={(e) => setForm({ ...form, gender: e.target.value })}
+            sx={{
+              borderRadius: "10px",
+              color: "#fff",
+              "& .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(255,255,255,0.2)" },
+              "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#fff" },
+            }}
+          >
+            <MenuItem value="Male">Male</MenuItem>
+            <MenuItem value="Female">Female</MenuItem>
+            <MenuItem value="Other">Other</MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
       {error && (
         <Alert severity="error" sx={{ mt: 1, mb: 1, borderRadius: "10px" }}>
           {error}

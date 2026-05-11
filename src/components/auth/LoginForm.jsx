@@ -8,7 +8,7 @@ import {
   Link,
 } from "@mui/material";
 import { useState } from "react";
-import { loginUser, resendVerificationEmail } from "../../firebase/authService";
+import { loginUser, API_URL } from "../../services/apiAuth";
 
 const fieldSx = {
   mb: 2,
@@ -49,7 +49,8 @@ const fieldSx = {
 const LoginForm = ({ onLogin }) => {
   const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
-  const [resending, setResending] = useState(false);
+  const [isMagic, setIsMagic] = useState(false);
+  const [isForgot, setIsForgot] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
@@ -59,43 +60,67 @@ const LoginForm = ({ onLogin }) => {
     setInfo("");
     setLoading(true);
     try {
-      const { token, user } = await loginUser(form.email, form.password);
-      onLogin(token, user);
+      const endpoint = `${API_URL}/auth/forgot-password`;
+      console.log("🚀 Calling API:", endpoint);
+      
+      if (isForgot) {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: form.email })
+        });
+        
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("❌ API Error Response:", text);
+          throw new Error(text.includes('<!DOCTYPE') ? 'Server error (404)' : text);
+        }
+        
+        const data = await res.json();
+        setInfo(data.message);
+      } else if (isMagic) {
+        const magicEndpoint = `${API_URL}/auth/magic-link`;
+        console.log("🚀 Calling Magic Link API:", magicEndpoint);
+        
+        const res = await fetch(magicEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: form.email })
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("❌ Magic API Error Response:", text);
+          throw new Error(text.includes('<!DOCTYPE') ? 'Server error (404)' : text);
+        }
+
+        const data = await res.json();
+        setInfo(data.message);
+      } else {
+        const { token, user } = await loginUser(form.email, form.password);
+        onLogin(token, user);
+      }
     } catch (err) {
-      setError(friendlyError(err.code));
+      setError(friendlyError(err.message || err.code));
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleResend() {
-    setError("");
-    setInfo("");
-    setResending(true);
-    try {
-      await resendVerificationEmail();
-      setInfo("Verification email resent! Check your inbox.");
-    } catch (err) {
-      setError("Could not resend email. Please try again later.");
-    } finally {
-      setResending(false);
-    }
-  }
-
   function friendlyError(code) {
+    if (code === 'Please verify your email first') {
+      return "Please verify your email before logging in. Check your inbox for the link.";
+    }
     switch (code) {
-      case "auth/email-not-verified":
-        return "Please verify your email before logging in.";
       case "auth/invalid-credential":
       case "auth/wrong-password":
       case "auth/user-not-found":
+      case "Invalid credentials":
         return "Incorrect email or password.";
       case "auth/invalid-email":
         return "Please enter a valid email address.";
-      case "auth/too-many-requests":
-        return "Too many attempts. Please wait and try again.";
       default:
-        return "Login failed. Please try again.";
+        return code || "Login failed. Please try again.";
     }
   }
 
@@ -113,33 +138,35 @@ const LoginForm = ({ onLogin }) => {
         sx={fieldSx}
       />
 
-      <TextField
-        label="Password"
-        type="password"
-        fullWidth
-        value={form.password}
-        onChange={(e) => setForm({ ...form, password: e.target.value })}
-        InputLabelProps={{ shrink: true }}
-        sx={fieldSx}
-      />
+      {!isMagic && !isForgot && (
+        <TextField
+          label="Password"
+          type="password"
+          fullWidth
+          value={form.password}
+          onChange={(e) => setForm({ ...form, password: e.target.value })}
+          InputLabelProps={{ shrink: true }}
+          sx={fieldSx}
+        />
+      )}
+
+      {!isMagic && !isForgot && (
+        <Box sx={{ textAlign: "right", mt: -1, mb: 1 }}>
+          <Link
+            component="button"
+            type="button"
+            variant="caption"
+            onClick={() => setIsForgot(true)}
+            sx={{ color: "rgba(255,255,255,0.6)", textDecoration: "none", "&:hover": { color: "#fff" } }}
+          >
+            Forgot Password?
+          </Link>
+        </Box>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 1, borderRadius: "10px" }}>
           {error}
-          {error.includes("verify") && (
-            <Box mt={1}>
-              <Link
-                component="button"
-                type="button"
-                variant="body2"
-                onClick={handleResend}
-                disabled={resending}
-                sx={{ color: "inherit", textDecoration: "underline" }}
-              >
-                {resending ? "Sending..." : "Resend verification email"}
-              </Link>
-            </Box>
-          )}
         </Alert>
       )}
 
@@ -156,8 +183,37 @@ const LoginForm = ({ onLogin }) => {
         disabled={loading}
         sx={{ mt: 2, height: 46 }}
       >
-        {loading ? <CircularProgress size={22} color="inherit" /> : "LOGIN"}
+        {loading ? <CircularProgress size={22} color="inherit" /> : (isForgot ? "SEND RESET LINK" : isMagic ? "SEND LOGIN LINK" : "LOGIN")}
       </Button>
+
+      <Button
+        fullWidth
+        variant="text"
+        onClick={() => {
+          setIsMagic(!isMagic);
+          setIsForgot(false);
+          setError("");
+          setInfo("");
+        }}
+        sx={{ mt: 1, color: "rgba(255,255,255,0.7)" }}
+      >
+        {isForgot ? "Back to Login" : isMagic ? "Use Password Instead" : "Login with Email Link"}
+      </Button>
+
+      {isForgot && (
+        <Button
+          fullWidth
+          variant="text"
+          onClick={() => {
+            setIsForgot(false);
+            setError("");
+            setInfo("");
+          }}
+          sx={{ mt: 0, color: "rgba(255,255,255,0.5)", fontSize: "0.75rem" }}
+        >
+          Cancel
+        </Button>
+      )}
     </Box>
   );
 };
