@@ -8,7 +8,7 @@ import {
   Link,
 } from "@mui/material";
 import { useState } from "react";
-import { loginUser, API_URL } from "../../services/apiAuth";
+import { loginUser, forgotPassword, sendMagicLink } from "../../services/apiAuth";
 
 const fieldSx = {
   mb: 2,
@@ -60,48 +60,18 @@ const LoginForm = ({ onLogin }) => {
     setInfo("");
     setLoading(true);
     try {
-      const endpoint = `${API_URL}/auth/forgot-password`;
-      console.log("🚀 Calling API:", endpoint);
-      
       if (isForgot) {
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: form.email })
-        });
-        
-        if (!res.ok) {
-          const text = await res.text();
-          console.error("❌ API Error Response:", text);
-          throw new Error(text.includes('<!DOCTYPE') ? 'Server error (404)' : text);
-        }
-        
-        const data = await res.json();
+        const data = await forgotPassword(form.email);
         setInfo(data.message);
       } else if (isMagic) {
-        const magicEndpoint = `${API_URL}/auth/magic-link`;
-        console.log("🚀 Calling Magic Link API:", magicEndpoint);
-        
-        const res = await fetch(magicEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: form.email })
-        });
-
-        if (!res.ok) {
-          const text = await res.text();
-          console.error("❌ Magic API Error Response:", text);
-          throw new Error(text.includes('<!DOCTYPE') ? 'Server error (404)' : text);
-        }
-
-        const data = await res.json();
+        const data = await sendMagicLink(form.email);
         setInfo(data.message);
       } else {
-        const { token, user } = await loginUser(form.email, form.password);
-        onLogin(token, user);
+        const data = await loginUser(form.email, form.password);
+        onLogin(data.token, data.user);
       }
     } catch (err) {
-      setError(friendlyError(err.message || err.code));
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -129,7 +99,7 @@ const LoginForm = ({ onLogin }) => {
       <Typography variant="h5" mb={2}>Welcome Back 👋</Typography>
 
       <TextField
-        label="Email"
+        label="Email or Username"
         variant="outlined"
         fullWidth
         value={form.email}

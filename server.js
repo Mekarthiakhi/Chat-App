@@ -13,6 +13,10 @@ import crypto from 'crypto';
 
 dotenv.config();
 
+const PORT = process.env.PORT || 5000;
+const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:5173`;
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+
 // ─── Firebase Admin Setup ──────────────────────────────────────────────────────
 try {
   const serviceAccount = JSON.parse(
@@ -41,7 +45,11 @@ const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // ─── MongoDB Atlas Connection ──────────────────────────────────────────────────
@@ -107,38 +115,70 @@ app.post('/api/register', async (req, res) => {
     // Check if user already exists
     const existingUser = await User.findOne({ $or: [{ email }, { username }] });
     if (existingUser) {
-      return res.status(400).json({ error: existingUser.email === email ? 'Email already in use' : 'Username taken' });
+      return res.status(400).json({ success: false, message: existingUser.email === email ? 'Email already in use' : 'Username taken' });
+    }
+
+    // Password validation: min 6 chars, 1 upper, 1 lower
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z]).{6,}$/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters and contain both uppercase and lowercase letters.'
+      });
     }
 
     const hash = await bcrypt.hash(password, 10);
-    const verificationToken = crypto.randomBytes(32).toString('hex');
 
     const user = await User.create({
-      username, email, password: hash, age, gender, country, verificationToken
+      username, email, password: hash, age, gender, country, isVerified: true
     });
 
-    // Send Verification Email
-    const backendUrl = process.env.BACKEND_URL || `http://localhost:${PORT}`;
-    const verificationUrl = `${backendUrl}/api/verify-email/${verificationToken}`;
+    // Send Welcome Email
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
-      subject: 'Verify your email for Chat App',
-      html: `<h2>Welcome to Chat App!</h2><p>Please click the link below to verify your email:</p><a href="${verificationUrl}">${verificationUrl}</a>`
+      subject: 'Welcome to Chat App! 🎉',
+      html: `
+        <div style="font-family: sans-serif; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+          <h2 style="color: #6366f1; text-align: center;">Welcome to Chat App!</h2>
+          <p>Hello <strong>${username}</strong>,</p>
+          <p>Your account has been created successfully. You can now log in and start chatting!</p>
+          <p><strong>Your Login Details:</strong><br/>
+          Username: <code>${username}</code><br/>
+          Email: <code>${email}</code></p>
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+          <p style="font-size: 12px; color: #6b7280; text-align: center;">Happy chatting! 💬</p>
+        </div>
+      `
     };
 
     transporter.sendMail(mailOptions, (err) => {
       if (err) console.error('❌ Email error:', err);
     });
 
-    res.json({ message: 'Registration successful! Please check your email to verify your account.' });
+    res.json({ success: true, message: 'Registration successful! You can now log in.' });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ success: false, message: e.message });
   }
 });
 
+// Helper for random password generation
+function generateRandomPassword() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%";
+  let pass = "";
+  // Ensure at least one upper, one lower, one number
+  pass += "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[Math.floor(Math.random() * 26)];
+  pass += "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random() * 26)];
+  pass += "0123456789"[Math.floor(Math.random() * 10)];
+  for (let i = 0; i < 5; i++) {
+    pass += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return pass.split('').sort(() => 0.5 - Math.random()).join('');
+}
+
 app.get('/api/verify-email/:token', async (req, res) => {
   try {
+    console.log(`🔗 Verification link hit with token: ${req.params.token}`);
     const user = await User.findOne({ verificationToken: req.params.token });
     if (!user) return res.status(400).send('<h1>Invalid or expired token</h1>');
 
@@ -146,8 +186,21 @@ app.get('/api/verify-email/:token', async (req, res) => {
     user.verificationToken = undefined;
     await user.save();
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    res.send(`<h1>Email verified! You can now log in.</h1><script>setTimeout(()=>window.location="${frontendUrl}", 3000)</script>`);
+    const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret123', { expiresIn: '7d' });
+    const frontendUrl = FRONTEND_URL;
+    const frontendUser = JSON.stringify({ id: user._id, username: user.username });
+
+    res.send(`
+      <script>
+        localStorage.setItem('chat_token', '${token}');
+        localStorage.setItem('chat_user', '${frontendUser}');
+        window.location.href = '${frontendUrl}';
+      </script>
+      <div style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+        <h1>Email verified!</h1>
+        <p>Logging you in instantly...</p>
+      </div>
+    `);
   } catch (e) {
     res.status(500).send('Error verifying email');
   }
@@ -160,16 +213,13 @@ app.post('/api/login', async (req, res) => {
 
     // Security: Use same error for both non-existent user and wrong password
     if (!user || !await bcrypt.compare(password, user.password)) {
-      return res.status(400).json({ error: 'Invalid credentials' });
+      return res.status(400).json({ success: false, message: 'Invalid credentials' });
     }
 
-    if (!user.isVerified) {
-      return res.status(400).json({ error: 'Please verify your email first' });
-    }
     await User.findByIdAndUpdate(user._id, { isOnline: true });
     const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret123', { expiresIn: '7d' });
-    res.json({ token, user: { id: user._id, username: user.username, gender: user.gender, country: user.country, age: user.age, bio: user.bio } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({ success: true, message: 'Login successful', token, user: { id: user._id, username: user.username, gender: user.gender, country: user.country, age: user.age, bio: user.bio } });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.post('/api/auth/forgot-password', async (req, res) => {
@@ -180,26 +230,39 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     // Security: Don't tell the user if the email exists or not
     if (!user) {
-      return res.json({ message: 'If that email exists, a reset link has been sent.' });
+      return res.json({ success: true, message: 'If that email exists, a reset link has been sent.' });
     }
 
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    const newTempPassword = generateRandomPassword();
+    user.password = await bcrypt.hash(newTempPassword, 10);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
     await user.save();
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
-      subject: 'Password Reset Request',
-      html: `<h2>Password Reset</h2><p>Click below to reset your password:</p><a href="${resetUrl}">${resetUrl}</a>`
+      subject: 'Your New Password - Chat App',
+      html: `
+        <div style="font-family: sans-serif; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+          <h2 style="color: #6366f1; text-align: center;">Password Reset Successful</h2>
+          <p>Hello <strong>${user.username}</strong>,</p>
+          <p>We have generated a new secure password for your account:</p>
+          <div style="background: #f3f4f6; padding: 15px; font-size: 24px; font-family: monospace; font-weight: bold; text-align: center; border-radius: 8px; margin: 20px 0; color: #1f2937; letter-spacing: 2px;">
+            ${newTempPassword}
+          </div>
+          <p><strong>Login Details:</strong><br/>
+          Username: <code>${user.username}</code><br/>
+          Email: <code>${user.email}</code></p>
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+          <p style="font-size: 12px; color: #6b7280; text-align: center;">Please log in and change your password in your settings for better security.</p>
+        </div>
+      `
     };
 
     transporter.sendMail(mailOptions);
-    res.json({ message: 'If that email exists, a reset link has been sent.' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({ success: true, message: 'password has been sent to your email.' });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.post('/api/auth/reset-password', async (req, res) => {
@@ -210,30 +273,29 @@ app.post('/api/auth/reset-password', async (req, res) => {
       resetPasswordExpires: { $gt: Date.now() }
     });
 
-    if (!user) return res.status(400).json({ error: 'Invalid or expired token' });
+    if (!user) return res.status(400).json({ success: false, message: 'Invalid or expired token' });
 
     user.password = await bcrypt.hash(newPassword, 10);
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
     await user.save();
 
-    res.json({ message: 'Password reset successful! You can now log in.' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({ success: true, message: 'Password reset successful! You can now log in.' });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.post('/api/auth/magic-link', async (req, res) => {
   try {
     const { email } = req.body;
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
     const magicToken = crypto.randomBytes(32).toString('hex');
     user.magicToken = magicToken;
     user.magicTokenExpires = Date.now() + 15 * 60 * 1000; // 15 mins
     await user.save();
 
-    const backendUrl = process.env.BACKEND_URL || `http://localhost:${PORT}`;
-    const magicUrl = `${backendUrl}/api/auth/verify-magic/${magicToken}`;
+    const magicUrl = `${BACKEND_URL}/api/auth/verify-magic/${magicToken}`;
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
@@ -242,12 +304,13 @@ app.post('/api/auth/magic-link', async (req, res) => {
     };
 
     transporter.sendMail(mailOptions);
-    res.json({ message: 'Login link sent to your email!' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({ success: true, message: 'Login link sent to your email!' });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.get('/api/auth/verify-magic/:token', async (req, res) => {
   try {
+    console.log(`🪄 Magic link hit with token: ${req.params.token}`);
     const user = await User.findOne({
       magicToken: req.params.token,
       magicTokenExpires: { $gt: Date.now() }
@@ -261,7 +324,7 @@ app.get('/api/auth/verify-magic/:token', async (req, res) => {
 
     const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret123', { expiresIn: '7d' });
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = FRONTEND_URL;
     const frontendUser = JSON.stringify({ id: user._id, username: user.username });
     res.send(`
       <script>
@@ -395,5 +458,7 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔗 Verification entry point: ${BACKEND_URL}`);
+});

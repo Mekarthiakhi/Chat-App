@@ -12,9 +12,10 @@ const AuthTabs = ({ onLogin, apiCall }) => {
   return (
     <Box
       sx={{
-        height: "100vh",
+        minHeight: "100vh",
         width: "100vw",
-        overflow: "hidden",
+        overflowX: "hidden",
+        overflowY: "auto",
         display: "flex",
         position: "relative",
         backgroundImage: `url(${backCover})`,
@@ -81,6 +82,7 @@ const AuthTabs = ({ onLogin, apiCall }) => {
           justifyContent: "center",
           zIndex: 2,
           px: 2,
+          py: 4,
         }}
       >
         {/* 💎 GLASS CARD */}

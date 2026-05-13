@@ -34,8 +34,7 @@ const RegisterForm = ({ onLogin }) => {
       const data = await registerUser(form);
       setSuccess(true);
     } catch (err) {
-      const msg = err.response?.data?.error || err.message || "Registration failed";
-      setError(friendlyError(msg));
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

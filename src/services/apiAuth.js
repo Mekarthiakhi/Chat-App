@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_URL = '/api';
 export { API_URL };
 
 const api = axios.create({
@@ -15,6 +15,15 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// Extract message from errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const message = error.response?.data?.message || error.message || 'An unexpected error occurred';
+    return Promise.reject(message);
+  }
+);
 
 export const loginUser = async (username, password) => {
   const res = await api.post('/login', { username, password });
@@ -41,6 +50,16 @@ export const getUsers = async () => {
 
 export const updateFcmToken = async (fcmToken) => {
   return await api.post('/users/fcm-token', { fcmToken });
+};
+
+export const forgotPassword = async (email) => {
+  const res = await api.post('/auth/forgot-password', { email });
+  return res.data;
+};
+
+export const sendMagicLink = async (email) => {
+  const res = await api.post('/auth/magic-link', { email });
+  return res.data;
 };
 
 export const logout = () => {

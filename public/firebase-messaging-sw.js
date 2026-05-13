@@ -13,7 +13,7 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Handle background messages
+// Handle background messages (when the app tab is not focused or closed)
 messaging.onBackgroundMessage((payload) => {
   const { title, body, icon } = payload.notification || {};
   self.registration.showNotification(title || "New Message", {
@@ -23,5 +23,24 @@ messaging.onBackgroundMessage((payload) => {
     vibrate: [200, 100, 200],
     tag: payload.data?.chatId || "chat-notification",
     renotify: true,
+    data: { url: self.location.origin }, // Store the app URL for click handling
   });
+});
+
+// When user clicks the notification, open the chat app
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || self.location.origin;
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      // If the app is already open in a tab, focus it
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          return client.focus();
+        }
+      }
+      // Otherwise open a new tab
+      return clients.openWindow(url);
+    })
+  );
 });
