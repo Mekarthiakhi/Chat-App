@@ -20,8 +20,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 5000;
-const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:5173`;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const BACKEND_URL = process.env.RENDER_EXTERNAL_URL || process.env.BACKEND_URL || `http://localhost:5173`;
+const FRONTEND_URL = process.env.RENDER_EXTERNAL_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // ─── Firebase Admin Setup ──────────────────────────────────────────────────────
 try {
