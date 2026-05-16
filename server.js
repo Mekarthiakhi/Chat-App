@@ -58,6 +58,11 @@ app.use(cors({
 app.use(express.json());
 
 // ─── MongoDB Atlas Connection ──────────────────────────────────────────────────
+const maskedURI = process.env.MONGODB_URI 
+  ? process.env.MONGODB_URI.replace(/:([^@]+)@/, ':****@') 
+  : 'NOT FOUND';
+console.log('📡 Attempting to connect to:', maskedURI);
+
 mongoose.connect(process.env.MONGODB_URI).then(() => console.log('✅ MongoDB Atlas connected'))
   .catch(err => {
     console.error('❌ MongoDB error:', err.message);
