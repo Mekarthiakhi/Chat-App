@@ -38,9 +38,11 @@ try {
 
 // ─── Email Setup (Brevo & Local Fallback) ─────────────────────────────────────
 const sendEmail = async ({ to, subject, html }) => {
+  console.log(`✉️ Preparing to send email to ${to}...`);
   if (process.env.BREVO_API_KEY) {
+    console.log('🔑 BREVO_API_KEY detected! Using Brevo API...');
     try {
-      await axios.post('https://api.brevo.com/v3/smtp/email', {
+      const response = await axios.post('https://api.brevo.com/v3/smtp/email', {
         sender: { name: 'Chat App', email: process.env.EMAIL_USER },
         to: [{ email: to }],
         subject: subject,
@@ -51,12 +53,12 @@ const sendEmail = async ({ to, subject, html }) => {
           'Content-Type': 'application/json'
         }
       });
-      console.log('✅ Email sent via Brevo to:', to);
+      console.log('✅ Email sent via Brevo! Message ID:', response.data.messageId);
     } catch (err) {
       console.error('❌ Brevo Email error:', err.response?.data || err.message);
     }
   } else {
-    // Local development fallback
+    console.log('⚠️ No BREVO_API_KEY found. Falling back to Nodemailer...');
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com', port: 587, secure: false,
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
@@ -195,7 +197,7 @@ app.post('/api/register', async (req, res) => {
       `
     };
 
-    sendEmail(mailOptions);
+    await sendEmail(mailOptions);
 
     res.json({ 
       success: true, 
@@ -313,7 +315,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       `
     };
 
-    sendEmail(mailOptions);
+    await sendEmail(mailOptions);
     res.json({ success: true, message: 'password has been sent to your email.' });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
@@ -356,7 +358,7 @@ app.post('/api/auth/magic-link', async (req, res) => {
       html: `<h2>Login Link</h2><p>Click below to log in instantly (valid for 15 mins):</p><a href="${magicUrl}">${magicUrl}</a>`
     };
 
-    sendEmail(mailOptions);
+    await sendEmail(mailOptions);
     res.json({ success: true, message: 'Login link sent to your email!' });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
