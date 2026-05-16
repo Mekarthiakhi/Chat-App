@@ -12,6 +12,7 @@ import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import axios from 'axios';
 
 dotenv.config();
 
@@ -35,27 +36,39 @@ try {
   console.warn('⚠️ Firebase Admin could not be initialized. Service account file missing?');
 }
 
-// ─── Nodemailer Setup ─────────────────────────────────────────────────────────
-const emailConfig = process.env.OAUTH_CLIENT_ID ? {
-  service: 'gmail',
-  auth: {
-    type: 'OAuth2',
-    user: process.env.EMAIL_USER,
-    clientId: process.env.OAUTH_CLIENT_ID,
-    clientSecret: process.env.OAUTH_CLIENT_SECRET,
-    refreshToken: process.env.OAUTH_REFRESH_TOKEN
-  }
-} : {
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // use TLS
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+// ─── Email Setup (Brevo & Local Fallback) ─────────────────────────────────────
+const sendEmail = async ({ to, subject, html }) => {
+  if (process.env.BREVO_API_KEY) {
+    try {
+      await axios.post('https://api.brevo.com/v3/smtp/email', {
+        sender: { name: 'Chat App', email: process.env.EMAIL_USER },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: html
+      }, {
+        headers: {
+          'api-key': process.env.BREVO_API_KEY,
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log('✅ Email sent via Brevo to:', to);
+    } catch (err) {
+      console.error('❌ Brevo Email error:', err.response?.data || err.message);
+    }
+  } else {
+    // Local development fallback
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com', port: 587, secure: false,
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+    });
+    try {
+      await transporter.sendMail({ from: process.env.EMAIL_USER, to, subject, html });
+      console.log('✅ Email sent locally via Nodemailer to:', to);
+    } catch (err) {
+      console.error('❌ Nodemailer error:', err);
+    }
   }
 };
-
-const transporter = nodemailer.createTransport(emailConfig);
 
 const app = express();
 const server = http.createServer(app);
@@ -182,9 +195,7 @@ app.post('/api/register', async (req, res) => {
       `
     };
 
-    transporter.sendMail(mailOptions, (err) => {
-      if (err) console.error('❌ Email error:', err);
-    });
+    sendEmail(mailOptions);
 
     res.json({ 
       success: true, 
@@ -302,7 +313,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       `
     };
 
-    transporter.sendMail(mailOptions);
+    sendEmail(mailOptions);
     res.json({ success: true, message: 'password has been sent to your email.' });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
@@ -345,7 +356,7 @@ app.post('/api/auth/magic-link', async (req, res) => {
       html: `<h2>Login Link</h2><p>Click below to log in instantly (valid for 15 mins):</p><a href="${magicUrl}">${magicUrl}</a>`
     };
 
-    transporter.sendMail(mailOptions);
+    sendEmail(mailOptions);
     res.json({ success: true, message: 'Login link sent to your email!' });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
