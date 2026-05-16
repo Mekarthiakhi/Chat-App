@@ -36,7 +36,16 @@ try {
 }
 
 // ─── Nodemailer Setup ─────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
+const emailConfig = process.env.OAUTH_CLIENT_ID ? {
+  service: 'gmail',
+  auth: {
+    type: 'OAuth2',
+    user: process.env.EMAIL_USER,
+    clientId: process.env.OAUTH_CLIENT_ID,
+    clientSecret: process.env.OAUTH_CLIENT_SECRET,
+    refreshToken: process.env.OAUTH_REFRESH_TOKEN
+  }
+} : {
   host: 'smtp.gmail.com',
   port: 587,
   secure: false, // use TLS
@@ -44,7 +53,9 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   }
-});
+};
+
+const transporter = nodemailer.createTransport(emailConfig);
 
 const app = express();
 const server = http.createServer(app);
