@@ -33,6 +33,7 @@ import {
   useEffect,
   useCallback,
 } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth, useThemeMode } from "../App";
 import { requestNotificationPermission, onForegroundMessage } from "../firebase/messaging";
 import { getUsers, updateFcmToken, API_URL } from "../services/apiAuth";
@@ -112,11 +113,13 @@ export default function ChatDashboard({ onLogout }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, text: "" });
   const [genderFilter, setGenderFilter] = useState("All"); // "All", "Male", "Female"
+  const [typingUser, setTypingUser] = useState(null);
 
   const messagesEndRef = useRef();
   const inputRef = useRef();
   const socketRef = useRef();
   const selectedUserRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
 
@@ -147,8 +150,11 @@ export default function ChatDashboard({ onLogout }) {
   useEffect(() => {
     if (!me?.uid) return;
 
-    // Connect to Node.js backend directly (Vite proxy doesn't handle WebSockets for socket.io)
-    const socket = io('http://localhost:5000');
+    // Connect to Node.js backend
+    const socketUrl = window.location.hostname === 'localhost' 
+      ? 'http://localhost:5000' 
+      : window.location.origin;
+    const socket = io(socketUrl);
     socketRef.current = socket;
 
     socket.emit("user_join", { userId: me.uid, username: me.name });
@@ -190,6 +196,12 @@ export default function ChatDashboard({ onLogout }) {
           }
         }
       }
+    });
+
+    socket.on("user_typing", ({ username }) => {
+      setTypingUser(username);
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => setTypingUser(null), 2000);
     });
 
     socket.on("user_online", ({ userId }) => {
@@ -593,6 +605,10 @@ export default function ChatDashboard({ onLogout }) {
         {!selectedUser ? (
           /* ── empty state ── */
           <Box
+            component={motion.div}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5 }}
             sx={{
               flex: 1,
               display: "flex",
@@ -603,12 +619,29 @@ export default function ChatDashboard({ onLogout }) {
               color: c.textMuted,
             }}
           >
-            <Box sx={{ fontSize: 64 }}>💬</Box>
-            <Typography fontWeight={600} fontSize={18}>
-              Select a conversation
+            <Box 
+              component={motion.div}
+              animate={{ 
+                y: [0, -10, 0],
+                rotate: [0, 5, -5, 0]
+              }}
+              transition={{ 
+                duration: 4, 
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+              sx={{ 
+                fontSize: 80,
+                filter: isDark ? "drop-shadow(0 0 20px rgba(99,102,241,0.4))" : "drop-shadow(0 10px 20px rgba(0,0,0,0.1))"
+              }}
+            >
+              💖
+            </Box>
+            <Typography fontWeight={800} fontSize={24} sx={{ background: "linear-gradient(135deg, #6366f1, #ec4899)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              Find Your Match
             </Typography>
-            <Typography fontSize={13}>
-              Pick someone from the left to start chatting
+            <Typography fontSize={14} sx={{ maxWidth: 280, textAlign: "center" }}>
+              Select a conversation from the sidebar to start chatting and making connections.
             </Typography>
           </Box>
         ) : (
@@ -667,8 +700,8 @@ export default function ChatDashboard({ onLogout }) {
                 <Typography fontWeight={700} fontSize={15}>
                   {selectedUser.name || selectedUser.email}
                 </Typography>
-                <Typography fontSize={12} sx={{ color: onlineMap[selectedUser.uid] ? "#4ade80" : c.textSoft }}>
-                  {onlineMap[selectedUser.uid] ? "Online" : "Offline"}
+                <Typography fontSize={12} sx={{ color: typingUser === (selectedUser.name || selectedUser.email) ? "#a855f7" : (onlineMap[selectedUser.uid] ? "#4ade80" : c.textSoft), fontStyle: typingUser === (selectedUser.name || selectedUser.email) ? "italic" : "normal" }}>
+                  {typingUser === (selectedUser.name || selectedUser.email) ? "typing..." : (onlineMap[selectedUser.uid] ? "Online" : "Offline")}
                 </Typography>
               </Box>
             </Box>
@@ -695,6 +728,7 @@ export default function ChatDashboard({ onLogout }) {
                 </Typography>
               )}
 
+              <AnimatePresence initial={false}>
               {messages.map((msg, i) => {
                 const isMe = msg.senderUid === me?.uid;
                 const showTime =
@@ -704,7 +738,12 @@ export default function ChatDashboard({ onLogout }) {
                     messages[i - 1].ts.toDate?.().getDate?.());
 
                 return (
-                  <Box key={msg._id || i}>
+                  <motion.div 
+                    key={msg._id || i}
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                  >
                     {showTime && msg.ts && (
                       <Typography
                         sx={{
@@ -741,6 +780,7 @@ export default function ChatDashboard({ onLogout }) {
                           color: isMe ? "#fff" : c.msgBubbleOtherText,
                           boxShadow: isDark ? "0 2px 8px rgba(0,0,0,0.3)" : "0 1px 4px rgba(0,0,0,0.1)",
                           position: "relative",
+                          backdropFilter: "blur(8px)",
                         }}
                       >
                         <Typography fontSize={14} sx={{ lineHeight: 1.5, wordBreak: "break-word" }}>
@@ -766,9 +806,10 @@ export default function ChatDashboard({ onLogout }) {
                         </Box>
                       </Box>
                     </Box>
-                  </Box>
+                  </motion.div>
                 );
               })}
+              </AnimatePresence>
 
               <div ref={messagesEndRef} />
             </Box>
@@ -878,7 +919,12 @@ export default function ChatDashboard({ onLogout }) {
                 placeholder="Type a message…"
                 value={input}
                 inputRef={inputRef}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  if (socketRef.current && selectedUser) {
+                    socketRef.current.emit("typing", { room: "private", username: me.name, receiverId: selectedUser.uid });
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();

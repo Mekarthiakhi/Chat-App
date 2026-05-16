@@ -10,8 +10,13 @@ import admin from 'firebase-admin';
 import { readFileSync } from 'fs';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 5000;
 const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:5173`;
@@ -118,12 +123,12 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ success: false, message: existingUser.email === email ? 'Email already in use' : 'Username taken' });
     }
 
-    // Password validation: min 6 chars, 1 upper, 1 lower
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z]).{6,}$/;
+    // Password validation: min 5 chars, 1 upper, 1 special character
+    const passwordRegex = /^(?=.*[A-Z])(?=.*[^A-Za-z0-9]).{5,}$/;
     if (!passwordRegex.test(password)) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 6 characters and contain both uppercase and lowercase letters.'
+        message: 'Password must be at least 5 characters and contain both an uppercase letter and a special character.'
       });
     }
 
@@ -132,6 +137,13 @@ app.post('/api/register', async (req, res) => {
     const user = await User.create({
       username, email, password: hash, age, gender, country, isVerified: true
     });
+
+    // Generate token so they can log in immediately
+    const token = jwt.sign(
+      { id: user._id, username: user.username },
+      process.env.JWT_SECRET || 'secret123',
+      { expiresIn: '7d' }
+    );
 
     // Send Welcome Email
     const mailOptions = {
@@ -156,7 +168,19 @@ app.post('/api/register', async (req, res) => {
       if (err) console.error('❌ Email error:', err);
     });
 
-    res.json({ success: true, message: 'Registration successful! You can now log in.' });
+    res.json({ 
+      success: true, 
+      message: 'Registration successful!', 
+      token, 
+      user: { 
+        id: user._id, 
+        username: user.username, 
+        gender: user.gender, 
+        country: user.country, 
+        age: user.age, 
+        bio: user.bio 
+      } 
+    });
   } catch (e) {
     res.status(400).json({ success: false, message: e.message });
   }
@@ -375,6 +399,12 @@ app.post('/api/users/fcm-token', auth, async (req, res) => {
     await User.findByIdAndUpdate(req.user.id, { fcmToken });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Serve Frontend in Production ──────────────────────────────────────────────
+app.use(express.static(path.join(__dirname, 'dist')));
+app.get(/^.*$/, (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // ─── Socket.io ────────────────────────────────────────────────────────────────

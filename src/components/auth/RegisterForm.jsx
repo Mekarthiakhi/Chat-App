@@ -13,6 +13,13 @@ import {
 import { useState } from "react";
 import { registerUser } from "../../services/apiAuth";
 
+// Password rules
+const passwordRules = [
+  { id: "length",    label: "At least 5 characters",       test: (p) => p.length >= 5 },
+  { id: "uppercase", label: "At least 1 uppercase letter", test: (p) => /[A-Z]/.test(p) },
+  { id: "special",   label: "At least 1 special character (@#$!%*?&...)", test: (p) => /[^A-Za-z0-9]/.test(p) },
+];
+
 const RegisterForm = ({ onLogin }) => {
   const [form, setForm] = useState({
     username: "",
@@ -23,16 +30,30 @@ const RegisterForm = ({ onLogin }) => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [pwTouched, setPwTouched] = useState(false);
+
+  // Compute which rules pass
+  const ruleResults = passwordRules.map((r) => ({ ...r, passed: r.test(form.password) }));
+  const allRulesPassed = ruleResults.every((r) => r.passed);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    setSuccess(false);
+    setPwTouched(true);
+
+    // Client-side password validation
+    if (!allRulesPassed) {
+      setError("Please meet all password requirements before registering.");
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await registerUser(form);
-      setSuccess(true);
+      // Redirect straight to chat after successful registration
+      if (data.token && data.user) {
+        onLogin(data.token, data.user);
+      }
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -55,7 +76,6 @@ const RegisterForm = ({ onLogin }) => {
         return code || "Registration failed. Please try again.";
     }
   }
-
 
   const fieldSx = {
     "& .MuiInputLabel-root": {
@@ -119,9 +139,53 @@ const RegisterForm = ({ onLogin }) => {
         type="password"
         fullWidth
         margin="normal"
-        onChange={(e) => setForm({ ...form, password: e.target.value })}
+        onFocus={() => setPwTouched(true)}
+        onChange={(e) => {
+          setForm({ ...form, password: e.target.value });
+          setPwTouched(true);
+        }}
         sx={fieldSx}
       />
+
+      {/* 🔐 Password strength indicators */}
+      {pwTouched && (
+        <Box sx={{ mt: 0.5, mb: 1, display: "flex", flexDirection: "column", gap: "3px" }}>
+          {ruleResults.map((r) => (
+            <Box key={r.id} sx={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <Box
+                sx={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  flexShrink: 0,
+                  transition: "all 0.25s",
+                  background: r.passed
+                    ? "linear-gradient(135deg, #22c55e, #16a34a)"
+                    : "rgba(255,255,255,0.12)",
+                  boxShadow: r.passed ? "0 0 6px rgba(34,197,94,0.5)" : "none",
+                  color: r.passed ? "#fff" : "rgba(255,255,255,0.35)",
+                }}
+              >
+                {r.passed ? "✓" : "✗"}
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: "12px",
+                  transition: "color 0.25s",
+                  color: r.passed ? "rgba(134,239,172,0.9)" : "rgba(255,255,255,0.45)",
+                }}
+              >
+                {r.label}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
 
       <Box sx={{ display: "flex", gap: 2, mt: 1 }}>
         <TextField
@@ -153,15 +217,10 @@ const RegisterForm = ({ onLogin }) => {
           </Select>
         </FormControl>
       </Box>
+
       {error && (
         <Alert severity="error" sx={{ mt: 1, mb: 1, borderRadius: "10px" }}>
           {error}
-        </Alert>
-      )}
-
-      {success && (
-        <Alert severity="success" sx={{ mt: 1, mb: 1, borderRadius: "10px" }}>
-          Verification email sent! Please check your inbox.
         </Alert>
       )}
 
