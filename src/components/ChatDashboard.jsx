@@ -11,6 +11,13 @@ import {
   useMediaQuery,
   Snackbar,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Button,
+  CircularProgress
 } from "@mui/material";
 import io from "socket.io-client";
 import SendIcon from "@mui/icons-material/Send";
@@ -26,6 +33,7 @@ import LightModeIcon from "@mui/icons-material/LightMode";
 import MaleIcon from "@mui/icons-material/Male";
 import FemaleIcon from "@mui/icons-material/Female";
 import PeopleIcon from "@mui/icons-material/People";
+import LockResetIcon from "@mui/icons-material/LockReset";
 import EmojiPicker from "emoji-picker-react";
 import {
   useState,
@@ -36,7 +44,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth, useThemeMode } from "../App";
 import { requestNotificationPermission, onForegroundMessage } from "../firebase/messaging";
-import { getUsers, updateFcmToken, API_URL } from "../services/apiAuth";
+import { getUsers, updateFcmToken, API_URL, changePassword } from "../services/apiAuth";
 
 /* ─── helpers ─────────────────────────────────────────── */
 
@@ -114,6 +122,12 @@ export default function ChatDashboard({ onLogout }) {
   const [snackbar, setSnackbar] = useState({ open: false, text: "" });
   const [genderFilter, setGenderFilter] = useState("All"); // "All", "Male", "Female"
   const [typingUser, setTypingUser] = useState(null);
+
+  /* change password state */
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [pwdOld, setPwdOld] = useState("");
+  const [pwdNew, setPwdNew] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const messagesEndRef = useRef();
   const inputRef = useRef();
@@ -338,6 +352,23 @@ export default function ChatDashboard({ onLogout }) {
     setIsListening(true);
   }, [isListening]);
 
+  /* ── change password ─────────────────────────────────── */
+  const submitChangePassword = async () => {
+    if (!pwdOld || !pwdNew) return setSnackbar({ open: true, text: "Both fields are required" });
+    setIsChangingPassword(true);
+    try {
+      await changePassword(pwdOld, pwdNew);
+      setSnackbar({ open: true, text: "Password changed successfully" });
+      setChangePasswordOpen(false);
+      setPwdOld("");
+      setPwdNew("");
+    } catch (err) {
+      setSnackbar({ open: true, text: typeof err === "string" ? err : "Failed to change password" });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   /* ── quick messages ─────────────────────────────────── */
   const quickMessages = ["Hey 👋", "How are you?", "What's up?", "Let's chat!", "Good morning ☀️", "😊"];
 
@@ -402,6 +433,11 @@ export default function ChatDashboard({ onLogout }) {
           </Box>
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Tooltip title="Change Password">
+              <IconButton onClick={() => setChangePasswordOpen(true)} size="small" sx={{ color: c.textSoft }}>
+                <LockResetIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Tooltip title={isDark ? "Light Mode" : "Dark Mode"}>
               <IconButton onClick={toggleTheme} size="small" sx={{ color: c.textSoft }}>
                 {isDark ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
@@ -981,6 +1017,54 @@ export default function ChatDashboard({ onLogout }) {
           {snackbar.text}
         </Alert>
       </Snackbar>
+
+      {/* ── change password dialog ── */}
+      <Dialog 
+        open={changePasswordOpen} 
+        onClose={() => setChangePasswordOpen(false)}
+        PaperProps={{
+          style: {
+            backgroundColor: c.bg,
+            color: c.text,
+            minWidth: isMobile ? '300px' : '400px'
+          }
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Change Password</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+          <TextField
+            label="Previous Password"
+            type="password"
+            value={pwdOld}
+            onChange={(e) => setPwdOld(e.target.value)}
+            fullWidth
+            size="small"
+            InputLabelProps={{ style: { color: c.textSoft } }}
+            InputProps={{ style: { color: c.text, backgroundColor: c.inputBg } }}
+          />
+          <TextField
+            label="New Password"
+            type="password"
+            value={pwdNew}
+            onChange={(e) => setPwdNew(e.target.value)}
+            fullWidth
+            size="small"
+            InputLabelProps={{ style: { color: c.textSoft } }}
+            InputProps={{ style: { color: c.text, backgroundColor: c.inputBg } }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 0 }}>
+          <Button onClick={() => setChangePasswordOpen(false)} sx={{ color: c.textSoft }}>Cancel</Button>
+          <Button 
+            onClick={submitChangePassword} 
+            disabled={isChangingPassword || !pwdOld || !pwdNew}
+            variant="contained" 
+            sx={{ background: "linear-gradient(135deg, #6366f1, #9333ea)", color: "#fff" }}
+          >
+            {isChangingPassword ? <CircularProgress size={24} color="inherit" /> : "Save"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

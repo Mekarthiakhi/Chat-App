@@ -62,6 +62,11 @@ export const sendMagicLink = async (email) => {
   return res.data;
 };
 
+export const changePassword = async (oldPassword, newPassword) => {
+  const res = await api.post('/auth/change-password', { oldPassword, newPassword });
+  return res.data;
+};
+
 export const logout = () => {
   localStorage.removeItem('chat_token');
   localStorage.removeItem('chat_user');

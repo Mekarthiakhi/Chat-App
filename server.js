@@ -339,6 +339,26 @@ app.post('/api/auth/reset-password', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
+app.post('/api/auth/change-password', auth, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) return res.status(400).json({ success: false, message: 'Incorrect previous password' });
+    
+    const passwordRegex = /^(?=.*[A-Z])(?=.*[^A-Za-z0-9]).{5,}$/;
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 5 characters and contain both an uppercase letter and a special character.' });
+    }
+    
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+    res.json({ success: true, message: 'Password changed successfully' });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
 app.post('/api/auth/magic-link', async (req, res) => {
   try {
     const { email } = req.body;
