@@ -340,8 +340,8 @@ export default function ChatDashboard({ onLogout }) {
   });
 
   const sortedUsers = [...filteredUsers].sort((a, b) => {
-    const aOnline = !!onlineMap[a.uid];
-    const bOnline = !!onlineMap[b.uid];
+    const aOnline = onlineMap[a.uid] ?? a.isOnline;
+    const bOnline = onlineMap[b.uid] ?? b.isOnline;
     if (aOnline && !bOnline) return -1;
     if (!aOnline && bOnline) return 1;
     
@@ -519,7 +519,7 @@ export default function ChatDashboard({ onLogout }) {
         {/* ─ online banner ─ */}
         <Box sx={{ px: 2, pb: 0.5 }}>
           <Typography fontSize={11} sx={{ color: c.textSoft, textTransform: "uppercase", letterSpacing: 1 }}>
-            {Object.values(onlineMap).filter(Boolean).length} online
+            {allUsers.filter(u => (onlineMap[u.uid] ?? u.isOnline)).length} online
           </Typography>
         </Box>
 
@@ -565,7 +565,7 @@ export default function ChatDashboard({ onLogout }) {
             </Typography>
           )}
           {sortedUsers.map((user) => {
-            const isOnline = !!onlineMap[user.uid];
+            const isOnline = onlineMap[user.uid] ?? user.isOnline;
             const isSelected = selectedUser?.uid === user.uid;
             const unreadCount = unread[user.uid] || 0;
 
@@ -749,7 +749,7 @@ export default function ChatDashboard({ onLogout }) {
               <Badge
                 overlap="circular"
                 variant="dot"
-                invisible={!onlineMap[selectedUser.uid]}
+                invisible={!(onlineMap[selectedUser.uid] ?? selectedUser.isOnline)}
                 sx={{
                   "& .MuiBadge-dot": {
                     bgcolor: "#4ade80",
@@ -776,8 +776,8 @@ export default function ChatDashboard({ onLogout }) {
                 <Typography fontWeight={700} fontSize={15}>
                   {selectedUser.name || selectedUser.email}
                 </Typography>
-                <Typography fontSize={12} sx={{ color: typingUser === (selectedUser.name || selectedUser.email) ? "#a855f7" : (onlineMap[selectedUser.uid] ? "#4ade80" : c.textSoft), fontStyle: typingUser === (selectedUser.name || selectedUser.email) ? "italic" : "normal" }}>
-                  {typingUser === (selectedUser.name || selectedUser.email) ? "typing..." : (onlineMap[selectedUser.uid] ? "Online" : "Offline")}
+                <Typography fontSize={12} sx={{ color: typingUser === (selectedUser.name || selectedUser.email) ? "#a855f7" : ((onlineMap[selectedUser.uid] ?? selectedUser.isOnline) ? "#4ade80" : c.textSoft), fontStyle: typingUser === (selectedUser.name || selectedUser.email) ? "italic" : "normal" }}>
+                  {typingUser === (selectedUser.name || selectedUser.email) ? "typing..." : ((onlineMap[selectedUser.uid] ?? selectedUser.isOnline) ? "Online" : "Offline")}
                 </Typography>
               </Box>
               
