@@ -44,7 +44,9 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth, useThemeMode } from "../App";
 import { requestNotificationPermission, onForegroundMessage } from "../firebase/messaging";
-import { getUsers, updateFcmToken, API_URL, changePassword } from "../services/apiAuth";
+import FavoriteIcon from "@mui/icons-material/Favorite";
+import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
+import { getUsers, updateFcmToken, API_URL, changePassword, toggleFriend } from "../services/apiAuth";
 
 /* ─── helpers ─────────────────────────────────────────── */
 
@@ -114,6 +116,7 @@ export default function ChatDashboard({ onLogout }) {
   const [search, setSearch] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
   const [unread, setUnread] = useState({});          // uid → count
+  const [friends, setFriends] = useState(me?.friends || []);
 
   /* chat state */
   const [messages, setMessages] = useState([]);
@@ -194,19 +197,19 @@ export default function ChatDashboard({ onLogout }) {
       if (!isSentByMe) {
         if (isFromOtherUser) {
           setUnread((prev) => ({ ...prev, [msg.sender._id]: (prev[msg.sender._id] || 0) + 1 }));
-          document.title = `\uD83D\uDCAC New message - Chat App`;
+          document.title = `\u2764\uFE0F New message - Chat App`;
 
           // System notification ONLY when tab is hidden, snackbar when focused
           if (document.hidden && Notification.permission === "granted") {
-            new Notification(`\uD83D\uDCAC ${msg.sender.username}`, {
+            new Notification(`\u2764\uFE0F ${msg.sender.username}`, {
               body: msg.content || "New message",
-              icon: "/vite.svg",
+              icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>❤️</text></svg>",
               tag: `msg-${msg._id}`,
               renotify: true,
               silent: false,
             });
           } else {
-            setSnackbar({ open: true, text: `\uD83D\uDCAC ${msg.sender.username}: ${msg.content || "New message"}` });
+            setSnackbar({ open: true, text: `\u2764\uFE0F ${msg.sender.username}: ${msg.content || "New message"}` });
           }
         }
       }
@@ -312,6 +315,18 @@ export default function ChatDashboard({ onLogout }) {
 
   }, [input, selectedUser, me]);
 
+  /* ── toggle friend ─────────────────────────────────────────── */
+  const handleToggleFriend = async (uid) => {
+    try {
+      const { friends: newFriends } = await toggleFriend(uid);
+      setFriends(newFriends);
+      setSnackbar({ open: true, text: newFriends.includes(uid) ? "Added to friends" : "Removed from friends" });
+    } catch (err) {
+      console.error(err);
+      setSnackbar({ open: true, text: "Failed to update friends" });
+    }
+  };
+
   /* ── logout ─────────────────────────────────────────── */
   const handleLogout = () => {
     onLogout();
@@ -319,9 +334,11 @@ export default function ChatDashboard({ onLogout }) {
 
   /* ── filtered sidebar users ────────────────────────── */
   const filteredUsers = allUsers.filter((u) => {
+    const isOnline = !!onlineMap[u.uid];
+    const isFriend = friends.includes(u.uid);
     const matchesSearch = (u.name || u.email || "").toLowerCase().includes(search.toLowerCase());
     const matchesGender = genderFilter === "All" || u.gender === genderFilter;
-    return matchesSearch && matchesGender;
+    return (isOnline || isFriend) && matchesSearch && matchesGender;
   });
 
   /* ── voice-to-text ─────────────────────────────────── */
@@ -371,6 +388,20 @@ export default function ChatDashboard({ onLogout }) {
 
   /* ── quick messages ─────────────────────────────────── */
   const quickMessages = ["Hey 👋", "How are you?", "What's up?", "Let's chat!", "Good morning ☀️", "😊", "No", "Chudham"];
+
+  /* ── spam limit logic ─────────────────────────────────── */
+  const isSelectedFriend = selectedUser ? friends.includes(selectedUser.uid) : false;
+  let consecutiveSent = 0;
+  if (!isSelectedFriend && selectedUser) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].senderUid === me?.uid) {
+        consecutiveSent++;
+      } else {
+        break; // Other user replied
+      }
+    }
+  }
+  const limitReached = !isSelectedFriend && consecutiveSent >= 3;
 
   /* ─── RENDER ──────────────────────────────────────────── */
   return (
@@ -732,7 +763,7 @@ export default function ChatDashboard({ onLogout }) {
                 </Avatar>
               </Badge>
 
-              <Box>
+              <Box sx={{ flex: 1 }}>
                 <Typography fontWeight={700} fontSize={15}>
                   {selectedUser.name || selectedUser.email}
                 </Typography>
@@ -740,6 +771,12 @@ export default function ChatDashboard({ onLogout }) {
                   {typingUser === (selectedUser.name || selectedUser.email) ? "typing..." : (onlineMap[selectedUser.uid] ? "Online" : "Offline")}
                 </Typography>
               </Box>
+              
+              <Tooltip title={friends.includes(selectedUser.uid) ? "Remove Friend" : "Add Friend"}>
+                <IconButton onClick={() => handleToggleFriend(selectedUser.uid)} size="small" sx={{ color: friends.includes(selectedUser.uid) ? "#ec4899" : c.textSoft }}>
+                  {friends.includes(selectedUser.uid) ? <FavoriteIcon /> : <FavoriteBorderIcon />}
+                </IconButton>
+              </Tooltip>
             </Box>
 
             {/* ─ messages ─ */}
@@ -952,16 +989,19 @@ export default function ChatDashboard({ onLogout }) {
                 fullWidth
                 multiline
                 maxRows={4}
-                placeholder="Type a message…"
+                disabled={limitReached}
+                placeholder={limitReached ? "Wait for them to reply..." : "Type a message…"}
                 value={input}
                 inputRef={inputRef}
                 onChange={(e) => {
+                  if (limitReached) return;
                   setInput(e.target.value);
                   if (socketRef.current && selectedUser) {
                     socketRef.current.emit("typing", { room: "private", username: me.name, receiverId: selectedUser.uid });
                   }
                 }}
                 onKeyDown={(e) => {
+                  if (limitReached) return;
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     sendMessage();
@@ -975,16 +1015,16 @@ export default function ChatDashboard({ onLogout }) {
                   color: c.text,
                   fontSize: 14,
                   border: `1px solid ${c.inputBorder}`,
-                  "& textarea::placeholder": { color: c.textSoft },
+                  "& textarea::placeholder": { color: limitReached ? "#ef4444" : c.textSoft },
                   transition: "background 0.3s ease",
                 }}
               />
 
               <IconButton
                 onClick={sendMessage}
-                disabled={!input.trim()}
+                disabled={!input.trim() || limitReached}
                 sx={{
-                  background: input.trim()
+                  background: (input.trim() && !limitReached)
                     ? "linear-gradient(135deg,#6366f1,#9333ea)"
                     : c.inputBg,
                   borderRadius: "12px",

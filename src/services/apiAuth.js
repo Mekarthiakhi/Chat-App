@@ -52,6 +52,11 @@ export const updateFcmToken = async (fcmToken) => {
   return await api.post('/users/fcm-token', { fcmToken });
 };
 
+export const toggleFriend = async (friendId) => {
+  const res = await api.post('/users/friend', { friendId });
+  return res.data;
+};
+
 export const forgotPassword = async (email) => {
   const res = await api.post('/auth/forgot-password', { email });
   return res.data;

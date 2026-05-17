@@ -112,6 +112,7 @@ const UserSchema = new mongoose.Schema({
   isOnline: { type: Boolean, default: false },
   lastSeen: { type: Date, default: Date.now },
   fcmToken: { type: String, default: '' },
+  friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   isVerified: { type: Boolean, default: false },
   verificationToken: { type: String },
   magicToken: { type: String },
@@ -209,7 +210,8 @@ app.post('/api/register', async (req, res) => {
         gender: user.gender, 
         country: user.country, 
         age: user.age, 
-        bio: user.bio 
+        bio: user.bio,
+        friends: user.friends || []
       } 
     });
   } catch (e) {
@@ -273,7 +275,7 @@ app.post('/api/login', async (req, res) => {
 
     await User.findByIdAndUpdate(user._id, { isOnline: true });
     const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET || 'secret123', { expiresIn: '7d' });
-    res.json({ success: true, message: 'Login successful', token, user: { id: user._id, username: user.username, gender: user.gender, country: user.country, age: user.age, bio: user.bio } });
+    res.json({ success: true, message: 'Login successful', token, user: { id: user._id, username: user.username, gender: user.gender, country: user.country, age: user.age, bio: user.bio, friends: user.friends || [] } });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
@@ -449,6 +451,23 @@ app.post('/api/users/fcm-token', auth, async (req, res) => {
     const { fcmToken } = req.body;
     await User.findByIdAndUpdate(req.user.id, { fcmToken });
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/users/friend', auth, async (req, res) => {
+  try {
+    const { friendId } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    
+    const friendIndex = user.friends.findIndex(f => f.toString() === friendId);
+    if (friendIndex > -1) {
+      user.friends.splice(friendIndex, 1);
+    } else {
+      user.friends.push(friendId);
+    }
+    await user.save();
+    res.json({ success: true, friends: user.friends });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
