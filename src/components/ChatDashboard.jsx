@@ -165,8 +165,8 @@ export default function ChatDashboard({ onLogout }) {
     if (!me?.uid) return;
 
     // Connect to Node.js backend
-    const socketUrl = window.location.hostname === 'localhost' 
-      ? 'http://localhost:5000' 
+    const socketUrl = window.location.hostname === 'localhost'
+      ? 'http://localhost:5000'
       : window.location.origin;
     const socket = io(socketUrl);
     socketRef.current = socket;
@@ -370,7 +370,7 @@ export default function ChatDashboard({ onLogout }) {
   };
 
   /* ── quick messages ─────────────────────────────────── */
-  const quickMessages = ["Hey 👋", "How are you?", "What's up?", "Let's chat!", "Good morning ☀️", "😊"];
+  const quickMessages = ["Hey 👋", "How are you?", "What's up?", "Let's chat!", "Good morning ☀️", "😊", "No", "Chudham"];
 
   /* ─── RENDER ──────────────────────────────────────────── */
   return (
@@ -525,7 +525,7 @@ export default function ChatDashboard({ onLogout }) {
             </Typography>
           )}
           {filteredUsers.map((user) => {
-            const isOnline = onlineMap[user.uid] !== undefined ? onlineMap[user.uid] : user.isOnline;
+            const isOnline = !!onlineMap[user.uid];
             const isSelected = selectedUser?.uid === user.uid;
             const unreadCount = unread[user.uid] || 0;
 
@@ -655,18 +655,18 @@ export default function ChatDashboard({ onLogout }) {
               color: c.textMuted,
             }}
           >
-            <Box 
+            <Box
               component={motion.div}
-              animate={{ 
+              animate={{
                 y: [0, -10, 0],
                 rotate: [0, 5, -5, 0]
               }}
-              transition={{ 
-                duration: 4, 
+              transition={{
+                duration: 4,
                 repeat: Infinity,
                 ease: "easeInOut"
               }}
-              sx={{ 
+              sx={{
                 fontSize: 80,
                 filter: isDark ? "drop-shadow(0 0 20px rgba(99,102,241,0.4))" : "drop-shadow(0 10px 20px rgba(0,0,0,0.1))"
               }}
@@ -709,7 +709,7 @@ export default function ChatDashboard({ onLogout }) {
               <Badge
                 overlap="circular"
                 variant="dot"
-                invisible={!(onlineMap[selectedUser.uid] !== undefined ? onlineMap[selectedUser.uid] : selectedUser.isOnline)}
+                invisible={!onlineMap[selectedUser.uid]}
                 sx={{
                   "& .MuiBadge-dot": {
                     bgcolor: "#4ade80",
@@ -736,8 +736,8 @@ export default function ChatDashboard({ onLogout }) {
                 <Typography fontWeight={700} fontSize={15}>
                   {selectedUser.name || selectedUser.email}
                 </Typography>
-                <Typography fontSize={12} sx={{ color: typingUser === (selectedUser.name || selectedUser.email) ? "#a855f7" : ((onlineMap[selectedUser.uid] !== undefined ? onlineMap[selectedUser.uid] : selectedUser.isOnline) ? "#4ade80" : c.textSoft), fontStyle: typingUser === (selectedUser.name || selectedUser.email) ? "italic" : "normal" }}>
-                  {typingUser === (selectedUser.name || selectedUser.email) ? "typing..." : ((onlineMap[selectedUser.uid] !== undefined ? onlineMap[selectedUser.uid] : selectedUser.isOnline) ? "Online" : "Offline")}
+                <Typography fontSize={12} sx={{ color: typingUser === (selectedUser.name || selectedUser.email) ? "#a855f7" : (onlineMap[selectedUser.uid] ? "#4ade80" : c.textSoft), fontStyle: typingUser === (selectedUser.name || selectedUser.email) ? "italic" : "normal" }}>
+                  {typingUser === (selectedUser.name || selectedUser.email) ? "typing..." : (onlineMap[selectedUser.uid] ? "Online" : "Offline")}
                 </Typography>
               </Box>
             </Box>
@@ -765,86 +765,86 @@ export default function ChatDashboard({ onLogout }) {
               )}
 
               <AnimatePresence initial={false}>
-              {messages.map((msg, i) => {
-                const isMe = msg.senderUid === me?.uid;
-                const showTime =
-                  i === 0 ||
-                  (msg.ts && messages[i - 1]?.ts &&
-                    msg.ts.toDate?.().getDate?.() !==
-                    messages[i - 1].ts.toDate?.().getDate?.());
+                {messages.map((msg, i) => {
+                  const isMe = msg.senderUid === me?.uid;
+                  const showTime =
+                    i === 0 ||
+                    (msg.ts && messages[i - 1]?.ts &&
+                      msg.ts.toDate?.().getDate?.() !==
+                      messages[i - 1].ts.toDate?.().getDate?.());
 
-                return (
-                  <motion.div 
-                    key={msg._id || i}
-                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ duration: 0.25, ease: "easeOut" }}
-                  >
-                    {showTime && msg.ts && (
-                      <Typography
-                        sx={{
-                          textAlign: "center",
-                          fontSize: 11,
-                          color: c.textSoft,
-                          my: 1.5,
-                        }}
-                      >
-                        {msg.ts.toDate
-                          ? msg.ts.toDate().toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })
-                          : ""}
-                      </Typography>
-                    )}
-
-                    <Box
-                      sx={{
-                        display: "flex",
-                        justifyContent: isMe ? "flex-end" : "flex-start",
-                        mb: 0.3,
-                      }}
+                  return (
+                    <motion.div
+                      key={msg._id || i}
+                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.25, ease: "easeOut" }}
                     >
-                      <Box
-                        sx={{
-                          maxWidth: isMobile ? "80%" : "58%",
-                          px: 1.8,
-                          py: 1,
-                          borderRadius: isMe
-                            ? "18px 18px 4px 18px"
-                            : "18px 18px 18px 4px",
-                          background: isMe
-                            ? c.msgBubbleMe
-                            : c.msgBubbleOther,
-                          color: isMe ? "#fff" : c.msgBubbleOtherText,
-                          boxShadow: isDark ? "0 2px 8px rgba(0,0,0,0.3)" : "0 1px 4px rgba(0,0,0,0.1)",
-                          position: "relative",
-                          backdropFilter: "blur(8px)",
-                        }}
-                      >
-                        <Typography fontSize={14} sx={{ lineHeight: 1.5, wordBreak: "break-word" }}>
-                          {msg.content || msg.text}
-                        </Typography>
-                        <Box
+                      {showTime && msg.ts && (
+                        <Typography
                           sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "flex-end",
-                            gap: 0.4,
-                            mt: 0.3,
+                            textAlign: "center",
+                            fontSize: 11,
+                            color: c.textSoft,
+                            my: 1.5,
                           }}
                         >
-                          <Typography fontSize={10} sx={{ color: isMe ? "rgba(255,255,255,0.6)" : (isDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.4)") }}>
-                            {timeLabel(msg.ts)}
+                          {msg.ts.toDate
+                            ? msg.ts.toDate().toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })
+                            : ""}
+                        </Typography>
+                      )}
+
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: isMe ? "flex-end" : "flex-start",
+                          mb: 0.3,
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            maxWidth: isMobile ? "80%" : "58%",
+                            px: 1.8,
+                            py: 1,
+                            borderRadius: isMe
+                              ? "18px 18px 4px 18px"
+                              : "18px 18px 18px 4px",
+                            background: isMe
+                              ? c.msgBubbleMe
+                              : c.msgBubbleOther,
+                            color: isMe ? "#fff" : c.msgBubbleOtherText,
+                            boxShadow: isDark ? "0 2px 8px rgba(0,0,0,0.3)" : "0 1px 4px rgba(0,0,0,0.1)",
+                            position: "relative",
+                            backdropFilter: "blur(8px)",
+                          }}
+                        >
+                          <Typography fontSize={14} sx={{ lineHeight: 1.5, wordBreak: "break-word" }}>
+                            {msg.content || msg.text}
                           </Typography>
-                          {isMe && (
-                            <DoneAllIcon
-                              sx={{ fontSize: 13, color: msg.read ? "#60a5fa" : (isMe ? "rgba(255,255,255,0.6)" : (isDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.4)")) }}
-                            />
-                          )}
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                              gap: 0.4,
+                              mt: 0.3,
+                            }}
+                          >
+                            <Typography fontSize={10} sx={{ color: isMe ? "rgba(255,255,255,0.6)" : (isDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.4)") }}>
+                              {timeLabel(msg.ts)}
+                            </Typography>
+                            {isMe && (
+                              <DoneAllIcon
+                                sx={{ fontSize: 13, color: msg.read ? "#60a5fa" : (isMe ? "rgba(255,255,255,0.6)" : (isDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.4)")) }}
+                              />
+                            )}
+                          </Box>
                         </Box>
                       </Box>
-                    </Box>
-                  </motion.div>
-                );
-              })}
+                    </motion.div>
+                  );
+                })}
               </AnimatePresence>
 
               <div ref={messagesEndRef} />
@@ -1019,8 +1019,8 @@ export default function ChatDashboard({ onLogout }) {
       </Snackbar>
 
       {/* ── change password dialog ── */}
-      <Dialog 
-        open={changePasswordOpen} 
+      <Dialog
+        open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
         PaperProps={{
           style: {
@@ -1055,10 +1055,10 @@ export default function ChatDashboard({ onLogout }) {
         </DialogContent>
         <DialogActions sx={{ p: 2, pt: 0 }}>
           <Button onClick={() => setChangePasswordOpen(false)} sx={{ color: c.textSoft }}>Cancel</Button>
-          <Button 
-            onClick={submitChangePassword} 
+          <Button
+            onClick={submitChangePassword}
             disabled={isChangingPassword || !pwdOld || !pwdNew}
-            variant="contained" 
+            variant="contained"
             sx={{ background: "linear-gradient(135deg, #6366f1, #9333ea)", color: "#fff" }}
           >
             {isChangingPassword ? <CircularProgress size={24} color="inherit" /> : "Save"}
