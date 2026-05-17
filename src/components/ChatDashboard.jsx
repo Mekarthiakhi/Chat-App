@@ -332,13 +332,22 @@ export default function ChatDashboard({ onLogout }) {
     onLogout();
   };
 
-  /* ── filtered sidebar users ────────────────────────── */
+  /* ── filtered and sorted sidebar users ────────────────────────── */
   const filteredUsers = allUsers.filter((u) => {
-    const isOnline = !!onlineMap[u.uid];
-    const isFriend = friends.includes(u.uid);
     const matchesSearch = (u.name || u.email || "").toLowerCase().includes(search.toLowerCase());
     const matchesGender = genderFilter === "All" || u.gender === genderFilter;
-    return (isOnline || isFriend) && matchesSearch && matchesGender;
+    return matchesSearch && matchesGender;
+  });
+
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
+    const aOnline = !!onlineMap[a.uid];
+    const bOnline = !!onlineMap[b.uid];
+    if (aOnline && !bOnline) return -1;
+    if (!aOnline && bOnline) return 1;
+    
+    const aName = (a.name || a.email || "").toLowerCase();
+    const bName = (b.name || b.email || "").toLowerCase();
+    return aName.localeCompare(bName);
   });
 
   /* ── voice-to-text ─────────────────────────────────── */
@@ -550,12 +559,12 @@ export default function ChatDashboard({ onLogout }) {
 
         {/* ─ user list ─ */}
         <Box sx={{ flex: 1, overflowY: "auto", px: 1 }}>
-          {filteredUsers.length === 0 && (
+          {sortedUsers.length === 0 && (
             <Typography sx={{ color: c.textMuted, textAlign: "center", mt: 4, fontSize: 13 }}>
               No users found
             </Typography>
           )}
-          {filteredUsers.map((user) => {
+          {sortedUsers.map((user) => {
             const isOnline = !!onlineMap[user.uid];
             const isSelected = selectedUser?.uid === user.uid;
             const unreadCount = unread[user.uid] || 0;
