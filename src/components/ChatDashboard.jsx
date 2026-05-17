@@ -335,6 +335,11 @@ export default function ChatDashboard({ onLogout }) {
   /* ── filtered and sorted sidebar users ────────────────────────── */
   const filteredUsers = allUsers.filter((u) => {
     const matchesSearch = (u.name || u.email || "").toLowerCase().includes(search.toLowerCase());
+    
+    if (genderFilter === "Friends") {
+      return matchesSearch && friends.includes(u.uid);
+    }
+    
     const matchesGender = genderFilter === "All" || u.gender === genderFilter;
     return matchesSearch && matchesGender;
   });
@@ -523,9 +528,9 @@ export default function ChatDashboard({ onLogout }) {
           </Typography>
         </Box>
 
-        {/* ─ gender filter ─ */}
-        <Box sx={{ px: 2, pb: 1, display: "flex", gap: 0.8 }}>
-          {["All", "Male", "Female"].map((g) => (
+        {/* ─ list filter ─ */}
+        <Box sx={{ px: 2, pb: 1, display: "flex", gap: 0.8, overflowX: "auto", "&::-webkit-scrollbar": { display: "none" } }}>
+          {["All", "Friends", "Male", "Female"].map((g) => (
             <Box
               key={g}
               onClick={() => setGenderFilter(g)}
@@ -539,20 +544,21 @@ export default function ChatDashboard({ onLogout }) {
                 display: "flex",
                 alignItems: "center",
                 gap: 0.4,
+                whiteSpace: "nowrap",
                 background: genderFilter === g
-                  ? g === "Male" ? "rgba(59,130,246,0.25)" : g === "Female" ? "rgba(236,72,153,0.25)" : "rgba(99,102,241,0.25)"
+                  ? g === "Male" ? "rgba(59,130,246,0.25)" : g === "Female" ? "rgba(236,72,153,0.25)" : g === "Friends" ? "rgba(244,63,94,0.25)" : "rgba(99,102,241,0.25)"
                   : c.inputBg,
                 border: genderFilter === g
-                  ? g === "Male" ? "1px solid rgba(59,130,246,0.5)" : g === "Female" ? "1px solid rgba(236,72,153,0.5)" : "1px solid rgba(99,102,241,0.5)"
+                  ? g === "Male" ? "1px solid rgba(59,130,246,0.5)" : g === "Female" ? "1px solid rgba(236,72,153,0.5)" : g === "Friends" ? "1px solid rgba(244,63,94,0.5)" : "1px solid rgba(99,102,241,0.5)"
                   : "1px solid transparent",
                 color: genderFilter === g
-                  ? g === "Male" ? "#60a5fa" : g === "Female" ? "#f472b6" : "#a5b4fc"
+                  ? g === "Male" ? "#60a5fa" : g === "Female" ? "#f472b6" : g === "Friends" ? "#fb7185" : "#a5b4fc"
                   : c.textSoft,
                 transition: "all 0.15s",
                 "&:hover": { background: c.hoverBg },
               }}
             >
-              {g === "Male" ? <><MaleIcon sx={{ fontSize: 16 }} /> Male</> : g === "Female" ? <><FemaleIcon sx={{ fontSize: 16 }} /> Female</> : <><PeopleIcon sx={{ fontSize: 14 }} /> All</>}
+              {g === "Male" ? <><MaleIcon sx={{ fontSize: 16 }} /> Male</> : g === "Female" ? <><FemaleIcon sx={{ fontSize: 16 }} /> Female</> : g === "Friends" ? <><FavoriteIcon sx={{ fontSize: 14 }} /> Friends</> : <><PeopleIcon sx={{ fontSize: 14 }} /> All</>}
             </Box>
           ))}
         </Box>
