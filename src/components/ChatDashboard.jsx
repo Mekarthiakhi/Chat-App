@@ -525,7 +525,7 @@ export default function ChatDashboard({ onLogout }) {
             </Typography>
           )}
           {filteredUsers.map((user) => {
-            const isOnline = !!onlineMap[user.uid];
+            const isOnline = onlineMap[user.uid] !== undefined ? onlineMap[user.uid] : user.isOnline;
             const isSelected = selectedUser?.uid === user.uid;
             const unreadCount = unread[user.uid] || 0;
 
@@ -709,7 +709,7 @@ export default function ChatDashboard({ onLogout }) {
               <Badge
                 overlap="circular"
                 variant="dot"
-                invisible={!onlineMap[selectedUser.uid]}
+                invisible={!(onlineMap[selectedUser.uid] !== undefined ? onlineMap[selectedUser.uid] : selectedUser.isOnline)}
                 sx={{
                   "& .MuiBadge-dot": {
                     bgcolor: "#4ade80",
@@ -736,8 +736,8 @@ export default function ChatDashboard({ onLogout }) {
                 <Typography fontWeight={700} fontSize={15}>
                   {selectedUser.name || selectedUser.email}
                 </Typography>
-                <Typography fontSize={12} sx={{ color: typingUser === (selectedUser.name || selectedUser.email) ? "#a855f7" : (onlineMap[selectedUser.uid] ? "#4ade80" : c.textSoft), fontStyle: typingUser === (selectedUser.name || selectedUser.email) ? "italic" : "normal" }}>
-                  {typingUser === (selectedUser.name || selectedUser.email) ? "typing..." : (onlineMap[selectedUser.uid] ? "Online" : "Offline")}
+                <Typography fontSize={12} sx={{ color: typingUser === (selectedUser.name || selectedUser.email) ? "#a855f7" : ((onlineMap[selectedUser.uid] !== undefined ? onlineMap[selectedUser.uid] : selectedUser.isOnline) ? "#4ade80" : c.textSoft), fontStyle: typingUser === (selectedUser.name || selectedUser.email) ? "italic" : "normal" }}>
+                  {typingUser === (selectedUser.name || selectedUser.email) ? "typing..." : ((onlineMap[selectedUser.uid] !== undefined ? onlineMap[selectedUser.uid] : selectedUser.isOnline) ? "Online" : "Offline")}
                 </Typography>
               </Box>
             </Box>
