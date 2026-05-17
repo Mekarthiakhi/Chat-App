@@ -320,6 +320,14 @@ export default function ChatDashboard({ onLogout }) {
     try {
       const { friends: newFriends } = await toggleFriend(uid);
       setFriends(newFriends);
+      
+      const userStr = localStorage.getItem("chat_user");
+      if (userStr) {
+        const userObj = JSON.parse(userStr);
+        userObj.friends = newFriends;
+        localStorage.setItem("chat_user", JSON.stringify(userObj));
+      }
+      
       setSnackbar({ open: true, text: newFriends.includes(uid) ? "Added to friends" : "Removed from friends" });
     } catch (err) {
       console.error(err);
