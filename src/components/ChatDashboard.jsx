@@ -320,14 +320,14 @@ export default function ChatDashboard({ onLogout }) {
     try {
       const { friends: newFriends } = await toggleFriend(uid);
       setFriends(newFriends);
-      
+
       const userStr = localStorage.getItem("chat_user");
       if (userStr) {
         const userObj = JSON.parse(userStr);
         userObj.friends = newFriends;
         localStorage.setItem("chat_user", JSON.stringify(userObj));
       }
-      
+
       setSnackbar({ open: true, text: newFriends.includes(uid) ? "Added to friends" : "Removed from friends" });
     } catch (err) {
       console.error(err);
@@ -343,11 +343,11 @@ export default function ChatDashboard({ onLogout }) {
   /* ── filtered and sorted sidebar users ────────────────────────── */
   const filteredUsers = allUsers.filter((u) => {
     const matchesSearch = (u.name || u.email || "").toLowerCase().includes(search.toLowerCase());
-    
+
     if (genderFilter === "Friends") {
       return matchesSearch && friends.includes(u.uid);
     }
-    
+
     const matchesGender = genderFilter === "All" || u.gender === genderFilter;
     return matchesSearch && matchesGender;
   });
@@ -357,7 +357,7 @@ export default function ChatDashboard({ onLogout }) {
     const bOnline = onlineMap[b.uid] ?? b.isOnline;
     if (aOnline && !bOnline) return -1;
     if (!aOnline && bOnline) return 1;
-    
+
     const aName = (a.name || a.email || "").toLowerCase();
     const bName = (b.name || b.email || "").toLowerCase();
     return aName.localeCompare(bName);
@@ -441,7 +441,7 @@ export default function ChatDashboard({ onLogout }) {
       {/* ══════════════ SIDEBAR ══════════════ */}
       <Box
         sx={{
-          width: isMobile ? "100%" : 320,
+          width: isMobile ? "100%" : 380,
           display: isMobile && selectedUser ? "none" : "flex",
           flexDirection: "column",
           borderRight: `1px solid ${c.border}`,
@@ -794,7 +794,7 @@ export default function ChatDashboard({ onLogout }) {
                   {typingUser === (selectedUser.name || selectedUser.email) ? "typing..." : ((onlineMap[selectedUser.uid] ?? selectedUser.isOnline) ? "Online" : "Offline")}
                 </Typography>
               </Box>
-              
+
               <Tooltip title={friends.includes(selectedUser.uid) ? "Remove Friend" : "Add Friend"}>
                 <IconButton onClick={() => handleToggleFriend(selectedUser.uid)} size="small" sx={{ color: friends.includes(selectedUser.uid) ? "#ec4899" : c.textSoft }}>
                   {friends.includes(selectedUser.uid) ? <FavoriteIcon /> : <FavoriteBorderIcon />}
