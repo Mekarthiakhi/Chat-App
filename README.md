@@ -1,21 +1,3 @@
-<<<<<<< HEAD
-# React + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
-=======
 # 💝 HeartChat – Dating Chat App
 
 A full-stack real-time dating chat application built with React, Node.js, Socket.io, and MongoDB Atlas.
@@ -25,15 +7,46 @@ A full-stack real-time dating chat application built with React, Node.js, Socket
 ## 🗂️ Project Structure
 
 ```
-dating-chat-app/
-├── src/                    # React frontend
-│   ├── App.jsx             # Main app (all components)
-│   └── index.js            # Entry point
-├── public/index.html       # HTML template
-├── server.js               # Node.js + Socket.io backend
-├── package.json            # Frontend dependencies
-├── package-backend.json    # Backend dependencies
-├── .env.example            # Environment variables template
+Chat-App/
+├── src/                    # React frontend (Vite)
+│   ├── components/
+│   │   ├── ChatDashboard.jsx
+│   │   ├── ParticlesBg.jsx
+│   │   └── auth/
+│   │       ├── LoginForm.jsx
+│   │       ├── RegisterForm.jsx
+│   │       ├── ResetPassword.jsx
+│   │       └── AuthTabs.jsx
+│   ├── services/
+│   │   └── apiAuth.js
+│   ├── firebase/
+│   │   ├── firebase.js
+│   │   ├── authService.js
+│   │   └── messaging.js
+│   ├── App.jsx
+│   └── main.jsx
+├── server/
+│   ├── models/
+│   │   ├── User.js
+│   │   └── Message.js
+│   ├── controllers/
+│   │   ├── authController.js
+│   │   ├── messageController.js
+│   │   └── userController.js
+│   ├── routes/
+│   │   ├── authRoutes.js
+│   │   ├── messageRoutes.js
+│   │   ├── userRoutes.js
+│   │   └── testRoutes.js
+│   ├── middleware/
+│   │   └── authMiddleware.js
+│   ├── config/
+│   │   └── db.js
+│   └── package.json
+├── server.js
+├── package.json
+├── vite.config.js
+├── .env.example
 └── README.md
 ```
 
@@ -48,52 +61,63 @@ dating-chat-app/
 4. Allow network access from anywhere (Network Access → 0.0.0.0/0)
 5. Get your connection string (Connect → Connect your application)
 
-### 2. Backend Setup
+### 2. Firebase Setup
+1. Go to [https://firebase.google.com](https://firebase.google.com)
+2. Create a new project
+3. Enable Authentication (Email/Password)
+4. Enable Cloud Messaging for notifications
+5. Download service account JSON file
+6. Place as `firebase-service-account.json` in project root
+
+### 3. Backend Setup
 ```bash
-# Copy package-backend.json as package.json in a /server folder, or run:
-npm install express socket.io mongoose cors bcryptjs jsonwebtoken dotenv nodemon
-
-# Create .env file (copy from .env.example):
-cp .env.example .env
+cd server
+npm install
+cp ../.env.example ../.env
 # Edit .env and add your MongoDB URI and JWT secret
-
-# Start backend:
-node server.js
-# OR with auto-reload:
-npx nodemon server.js
+npm run dev
 ```
 
-### 3. Frontend Setup
+### 4. Frontend Setup
 ```bash
 npm install
-npm start
+npm run dev
 ```
 
 ---
 
 ## ✨ Features
 
-### Auth
-- 🔐 Register with username, email, password, age, gender, country
-- 🔑 Login with username or email
-- 🔒 JWT-based authentication
-- 🍪 Session persistence (localStorage)
+### 🔐 Authentication
+- ✅ Register with username, email, password, age, gender, country
+- ✅ Login with email or username
+- ✅ JWT-based secure authentication
+- ✅ Password reset via email
+- ✅ Session persistence (localStorage)
 
-### Chat Modes
-- 💬 **Public Rooms** – General Chat, Flirt Corner, Make Friends, Random
-- 💌 **Private 1-on-1 Chat** – Direct messaging with any user
-- 🤖 **AI Chat** – AI-powered dating features (matchmaker, tips)
+### 💬 Chat Modes
+- ✅ **Public Rooms** – General Chat, Flirt Corner, Make Friends, Random
+- ✅ **Private 1-on-1 Chat** – Direct messaging with any user
+- ✅ **Typing Indicators** – See when someone is typing
 
-### Users
-- 👥 Online users list with gender filter (All / Male / Female)
-- 🔍 Search users by username
-- 🌍 Country flags and location display
-- 🟢 Online/offline status indicators
+### 👥 User Management
+- ✅ Online users list with gender/country filter
+- ✅ Search users by username
+- ✅ Friend system (add/remove friends)
+- ✅ Online/offline status indicators
+- ✅ User profiles with avatars
 
-### Real-time
-- ⚡ Socket.io for instant messaging
-- ✍️ Live typing indicators
-- 🟢 Online presence tracking
+### 🔔 Notifications
+- ✅ Firebase push notifications
+- ✅ Email notifications (Brevo)
+- ✅ Real-time updates via Socket.io
+
+### 🎨 UI/UX
+- ✅ Dark/Light theme toggle
+- ✅ Material-UI components
+- ✅ Responsive design
+- ✅ Smooth animations (Framer Motion)
+- ✅ Emoji picker integration
 
 ---
 
@@ -103,9 +127,11 @@ npm start
 |--------|----------|------|-------------|
 | POST | /api/register | ❌ | Register new user |
 | POST | /api/login | ❌ | Login user |
-| GET | /api/users/online | ✅ | Get online users |
+| GET | /api/users | ✅ | Get all online users |
 | GET | /api/messages/public | ✅ | Get public messages |
 | GET | /api/messages/private/:userId | ✅ | Get private messages |
+| POST | /api/users/friend | ✅ | Toggle friend |
+| POST | /api/users/fcm-token | ✅ | Update FCM token |
 
 ---
 
@@ -123,35 +149,143 @@ npm start
 
 ## 🎨 Tech Stack
 
-- **Frontend**: React 18, CSS Variables, Google Fonts (Playfair Display + DM Sans)
-- **Backend**: Node.js, Express, Socket.io
+- **Frontend**: React 19, Material-UI 7+, Vite, Framer Motion
+- **Backend**: Node.js, Express 5, Socket.io
 - **Database**: MongoDB Atlas (Mongoose)
-- **Auth**: JWT + bcrypt
+- **Auth**: JWT + bcryptjs
 - **Real-time**: WebSockets via Socket.io
+- **Notifications**: Firebase Cloud Messaging + Brevo Email
 
 ---
 
 ## 🔧 Environment Variables (.env)
 
 ```env
-MONGODB_URI=mongodb+srv://USERNAME:PASSWORD@cluster0.mongodb.net/datingchat
-JWT_SECRET=your_super_secret_key_here
+# MongoDB
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/chatapp
+
+# JWT
+JWT_SECRET=your_super_secret_key_here_min_32_chars
+
+# Server
 PORT=5000
+NODE_ENV=development
+
+# Firebase
+FIREBASE_API_KEY=your_key
+FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+FIREBASE_APP_ID=your_app_id
+
+# Email (Brevo)
+BREVO_API_KEY=your_brevo_api_key
+EMAIL_USER=noreply@chatapp.com
+
+# URLs
+FRONTEND_URL=http://localhost:5173
+BACKEND_URL=http://localhost:5000
+RENDER_EXTERNAL_URL=https://your-backend.onrender.com
 ```
 
 ---
 
-## 📦 Production Deployment
+## 📦 Installation
+
+```bash
+# Install frontend dependencies
+npm install
+
+# Install backend dependencies
+cd server
+npm install
+cd ..
+
+# Start backend
+npm start
+
+# Start frontend (in new terminal)
+npm run dev
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+# Test backend
+curl -X POST http://localhost:5000/api/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "testuser",
+    "email": "test@example.com",
+    "password": "TestPassword123",
+    "age": 25,
+    "gender": "Male"
+  }'
+
+# Test login
+curl -X POST http://localhost:5000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "TestPassword123"
+  }'
+```
+
+---
+
+## 🚀 Production Deployment
 
 ### Backend → Railway / Render / Fly.io
 - Set environment variables in dashboard
 - Deploy from GitHub
+- Configure MongoDB connection for production
 
 ### Frontend → Vercel / Netlify
-- Set `REACT_APP_API_URL` to your backend URL
+- Set `VITE_API_URL` to your backend URL
 - Deploy from GitHub
 
 ---
 
-Made with ❤️ – HeartChat
->>>>>>> 9fad5fd (local changes)
+## 🔐 Security Features
+
+- ✅ JWT token-based authentication
+- ✅ bcryptjs password hashing (12 salt rounds)
+- ✅ CORS protection with whitelisted origin
+- ✅ Input validation and sanitization
+- ✅ Rate limiting on auth endpoints
+- ✅ Secure socket.io events
+- ✅ Firebase security rules
+
+---
+
+## 📝 Latest Updates
+
+- ✅ Fixed authentication controllers with real JWT logic
+- ✅ Updated database schema with all required fields
+- ✅ Added comprehensive input validation
+- ✅ Improved mobile responsiveness
+- ✅ Enhanced UI with error states and loading indicators
+- ✅ Fixed dependency typos
+- ✅ Added CORS security hardening
+
+---
+
+## 🤝 Contributing
+
+1. Create a feature branch
+2. Make your changes
+3. Test thoroughly
+4. Submit a pull request
+
+---
+
+## 📄 License
+
+ISC
+
+---
+
+**Made with ❤️ – HeartChat Team**

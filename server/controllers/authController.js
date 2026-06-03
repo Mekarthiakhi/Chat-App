@@ -1,29 +1,86 @@
-// server/controllers/authController.js
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
+
+const generateToken = (userId, username) => {
+  return jwt.sign(
+    { id: userId, username },
+    process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+};
 
 export const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { username, email, password, age, gender, country } = req.body;
 
-    // basic validation
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "All fields are required",
+    // Validation
+    if (!username || !email || !password) {
+      return res.status(400).json({ message: 'Username, email, and password are required' });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: 'Please enter a valid email address' });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [{ email: email.toLowerCase() }, { username }]
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: existingUser.email === email.toLowerCase()
+          ? 'Email already registered'
+          : 'Username already taken'
       });
     }
 
-    // TODO: save user to DB (MongoDB later)
-    return res.status(201).json({
-      success: true,
-      message: "User registered successfully",
-      data: { name, email },
+    // Hash password with strong salt rounds
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create new user
+    const user = new User({
+      username,
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      age: age || null,
+      gender: gender || 'Other',
+      country: country || 'Unknown',
+      isOnline: false
     });
+
+    await user.save();
+
+    // Generate JWT token
+    const token = generateToken(user._id, user.username);
+
+    // Return user data (without password)
+    const userData = {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      gender: user.gender,
+      age: user.age,
+      country: user.country
+    };
+
+    res.status(201).json({
+      message: 'User registered successfully',
+      token,
+      user: userData
+    });
+
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Registration failed",
-      error: error.message,
-    });
+    console.error('Registration error:', error);
+    res.status(500).json({ message: 'Registration failed: ' + error.message });
   }
 };
 
@@ -31,24 +88,68 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // Validation
     if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required",
-      });
+      return res.status(400).json({ message: 'Email and password are required' });
     }
 
-    // TODO: verify user from DB
-    return res.status(200).json({
-      success: true,
-      message: "Login successful",
-      token: "dummy-jwt-token",
+    // Find user by email or username
+    const user = await User.findOne({
+      $or: [{ email: email.toLowerCase() }, { username: email }]
+    }).select('+password');
+
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    // Compare passwords
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    // Update last seen
+    user.lastSeen = new Date();
+    user.isOnline = true;
+    await user.save();
+
+    // Generate JWT token
+    const token = generateToken(user._id, user.username);
+
+    // Return user data (without password)
+    const userData = {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      gender: user.gender,
+      age: user.age,
+      country: user.country
+    };
+
+    res.json({
+      message: 'Login successful',
+      token,
+      user: userData
     });
+
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Login failed",
-      error: error.message,
-    });
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Login failed: ' + error.message });
+  }
+};
+
+export const logout = async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    if (userId) {
+      await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen: new Date() });
+    }
+
+    res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ message: 'Logout failed: ' + error.message });
   }
 };
