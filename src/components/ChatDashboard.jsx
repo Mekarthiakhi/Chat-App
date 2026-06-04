@@ -130,6 +130,9 @@ export default function ChatDashboard({ onLogout }) {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [pwdOld, setPwdOld] = useState("");
   const [pwdNew, setPwdNew] = useState("");
+  const [pwdConfirm, setPwdConfirm] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [currentUsername, setCurrentUsername] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const messagesEndRef = useRef();
@@ -393,16 +396,59 @@ export default function ChatDashboard({ onLogout }) {
 
   /* ── change password ─────────────────────────────────── */
   const submitChangePassword = async () => {
-    if (!pwdOld || !pwdNew) return setSnackbar({ open: true, text: "Both fields are required" });
+    if (!pwdOld || !pwdNew || !pwdConfirm) {
+      return setSnackbar({ open: true, text: "All password fields are required" });
+    }
+
+    if (pwdNew !== pwdConfirm) {
+      return setSnackbar({ open: true, text: "New passwords do not match" });
+    }
+
+    if (pwdNew.length < 8) {
+      return setSnackbar({ open: true, text: "Password must be at least 8 characters" });
+    }
+
     setIsChangingPassword(true);
     try {
-      await changePassword(pwdOld, pwdNew);
-      setSnackbar({ open: true, text: "Password changed successfully" });
+      // Make API call to change password and optionally update username
+      const response = await fetch(`${API_URL}/auth/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('chat_token')}`
+        },
+        body: JSON.stringify({
+          currentPassword: pwdOld,
+          newPassword: pwdNew,
+          confirmPassword: pwdConfirm,
+          username: newUsername.trim() || null
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update');
+      }
+
+      // Update user data if username was changed
+      if (data.user) {
+        localStorage.setItem('chat_user', JSON.stringify(data.user));
+      }
+
+      let successMsg = "Password changed successfully";
+      if (newUsername.trim()) {
+        successMsg += " & username updated";
+      }
+
+      setSnackbar({ open: true, text: successMsg });
       setChangePasswordOpen(false);
       setPwdOld("");
       setPwdNew("");
+      setPwdConfirm("");
+      setNewUsername("");
     } catch (err) {
-      setSnackbar({ open: true, text: typeof err === "string" ? err : "Failed to change password" });
+      setSnackbar({ open: true, text: typeof err === "string" ? err : err.message || "Failed to update" });
     } finally {
       setIsChangingPassword(false);
     }
@@ -1084,7 +1130,13 @@ export default function ChatDashboard({ onLogout }) {
       {/* ── change password dialog ── */}
       <Dialog
         open={changePasswordOpen}
-        onClose={() => setChangePasswordOpen(false)}
+        onClose={() => {
+          setChangePasswordOpen(false);
+          setPwdOld("");
+          setPwdNew("");
+          setPwdConfirm("");
+          setNewUsername("");
+        }}
         PaperProps={{
           style: {
             backgroundColor: c.bg,
@@ -1093,10 +1145,16 @@ export default function ChatDashboard({ onLogout }) {
           }
         }}
       >
-        <DialogTitle sx={{ fontWeight: 700 }}>Change Password</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700 }}>Change Password & Update Username</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+          {/* Current Username Display */}
+          <Typography variant="caption" sx={{ color: c.textMuted }}>
+            Current Username: <strong>{me?.username || 'N/A'}</strong>
+          </Typography>
+
+          {/* Password Fields */}
           <TextField
-            label="Previous Password"
+            label="Current Password"
             type="password"
             value={pwdOld}
             onChange={(e) => setPwdOld(e.target.value)}
@@ -1105,6 +1163,7 @@ export default function ChatDashboard({ onLogout }) {
             InputLabelProps={{ style: { color: c.textSoft } }}
             InputProps={{ style: { color: c.text, backgroundColor: c.inputBg } }}
           />
+          
           <TextField
             label="New Password"
             type="password"
@@ -1115,12 +1174,54 @@ export default function ChatDashboard({ onLogout }) {
             InputLabelProps={{ style: { color: c.textSoft } }}
             InputProps={{ style: { color: c.text, backgroundColor: c.inputBg } }}
           />
+
+          <TextField
+            label="Confirm New Password"
+            type="password"
+            value={pwdConfirm}
+            onChange={(e) => setPwdConfirm(e.target.value)}
+            fullWidth
+            size="small"
+            InputLabelProps={{ style: { color: c.textSoft } }}
+            InputProps={{ style: { color: c.text, backgroundColor: c.inputBg } }}
+          />
+
+          {/* Optional Username Field */}
+          <Divider sx={{ my: 1, borderColor: c.border }} />
+          
+          <Typography variant="caption" sx={{ color: c.textMuted }}>
+            Optional: Update your username
+          </Typography>
+
+          <TextField
+            label="New Username (Optional)"
+            placeholder={me?.username || 'Leave empty to skip'}
+            value={newUsername}
+            onChange={(e) => setNewUsername(e.target.value)}
+            fullWidth
+            size="small"
+            InputLabelProps={{ style: { color: c.textSoft } }}
+            InputProps={{ style: { color: c.text, backgroundColor: c.inputBg } }}
+            helperText={newUsername ? `${newUsername.length}/50 characters` : 'Leave blank if you don\'t want to change'}
+            FormHelperTextProps={{ style: { color: c.textMuted } }}
+          />
         </DialogContent>
         <DialogActions sx={{ p: 2, pt: 0 }}>
-          <Button onClick={() => setChangePasswordOpen(false)} sx={{ color: c.textSoft }}>Cancel</Button>
+          <Button 
+            onClick={() => {
+              setChangePasswordOpen(false);
+              setPwdOld("");
+              setPwdNew("");
+              setPwdConfirm("");
+              setNewUsername("");
+            }} 
+            sx={{ color: c.textSoft }}
+          >
+            Cancel
+          </Button>
           <Button
             onClick={submitChangePassword}
-            disabled={isChangingPassword || !pwdOld || !pwdNew}
+            disabled={isChangingPassword || !pwdOld || !pwdNew || !pwdConfirm}
             variant="contained"
             sx={{ background: "linear-gradient(135deg, #6366f1, #9333ea)", color: "#fff" }}
           >

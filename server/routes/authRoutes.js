@@ -118,9 +118,54 @@ router.post("/change-password", authMiddleware, async (req, res) => {
 
     // Update password (pre-save hook will hash it)
     user.password = newPassword;
+
+    // Optional: Update username if provided
+    const { username } = req.body;
+    if (username && username.trim()) {
+      const trimmedUsername = username.trim();
+      
+      if (trimmedUsername.length < 2) {
+        return res.status(400).json({ message: "Username must be at least 2 characters" });
+      }
+
+      if (trimmedUsername.length > 50) {
+        return res.status(400).json({ message: "Username must be less than 50 characters" });
+      }
+
+      // Check if username already exists (excluding current user)
+      const existingUser = await User.findOne({ 
+        username: trimmedUsername,
+        _id: { $ne: userId }
+      });
+
+      if (existingUser) {
+        return res.status(409).json({ message: "Username already taken" });
+      }
+
+      user.username = trimmedUsername;
+    }
+
     await user.save();
 
-    res.json({ message: "Password changed successfully" });
+    // Return updated user data
+    const userData = {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      gender: user.gender,
+      age: user.age,
+      country: user.country
+    };
+
+    let message = "Password changed successfully";
+    if (username && username.trim()) {
+      message += " & username updated";
+    }
+
+    res.json({ 
+      message,
+      user: userData
+    });
 
   } catch (error) {
     console.error("Change password error:", error);

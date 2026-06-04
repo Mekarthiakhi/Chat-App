@@ -3,8 +3,6 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import LoginForm from "./LoginForm";
 import RegisterForm from "./RegisterForm";
-import ChangePassword from "./ChangePassword";
-import UpdateProfile from "./UpdateProfile";
 
 const backCover = "/backCover.png";
 
@@ -142,8 +140,6 @@ const AuthTabs = ({ onLogin, apiCall }) => {
             centered
             textColor="inherit"
             indicatorColor="secondary"
-            variant="scrollable"
-            scrollButtons="auto"
             sx={{
               mb: 3,
               "& .MuiTabs-indicator": {
@@ -156,9 +152,7 @@ const AuthTabs = ({ onLogin, apiCall }) => {
                 color: "#bbb",
                 fontWeight: 500,
                 textTransform: "none",
-                fontSize: "14px",
-                minWidth: "auto",
-                px: 1.5,
+                fontSize: "16px",
               },
               "& .Mui-selected": {
                 color: "#fff",
@@ -167,8 +161,6 @@ const AuthTabs = ({ onLogin, apiCall }) => {
           >
             <Tab label="Login" />
             <Tab label="Register" />
-            <Tab label="Change Password" />
-            <Tab label="Update Profile" />
           </Tabs>
 
           {/* ✨ ANIMATED FORM SWITCH */}
@@ -180,10 +172,11 @@ const AuthTabs = ({ onLogin, apiCall }) => {
               exit={{ opacity: 0, x: tab === 0 ? 40 : -40 }}
               transition={{ duration: 0.35 }}
             >
-              {tab === 0 && <LoginForm onLogin={onLogin} />}
-              {tab === 1 && <RegisterForm onLogin={onLogin} />}
-              {tab === 2 && <ChangePassword onSuccess={() => setTab(0)} />}
-              {tab === 3 && <UpdateProfile onSuccess={() => setTab(0)} />}
+              {tab === 0 ? (
+                <LoginForm onLogin={onLogin} />
+              ) : (
+                <RegisterForm onLogin={onLogin} />
+              )}
             </motion.div>
           </AnimatePresence>
         </Box>
