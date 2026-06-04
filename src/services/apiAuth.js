@@ -67,8 +67,16 @@ export const sendMagicLink = async (email) => {
   return res.data;
 };
 
-export const changePassword = async (oldPassword, newPassword) => {
-  const res = await api.post('/auth/change-password', { oldPassword, newPassword });
+export const changePassword = async (currentPassword, newPassword, confirmPassword) => {
+  const res = await api.post('/auth/change-password', { currentPassword, newPassword, confirmPassword });
+  return res.data;
+};
+
+export const updateProfile = async (name) => {
+  const res = await api.post('/auth/update-profile', { name });
+  if (res.data.user) {
+    localStorage.setItem('chat_user', JSON.stringify(res.data.user));
+  }
   return res.data;
 };
 
